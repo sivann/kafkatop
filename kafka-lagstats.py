@@ -455,8 +455,27 @@ def lag_show_rich(params):
                     row_style=None
 
 
-                table.add_row(g,  kd2['group_lags'][g][t]['topic'],  
-                    #f"{rates[g]['events_consumed']}", 
+                g1=g.replace("unity","c1")
+                g1=g1.replace("src","datasrc")
+                g1=g1.replace("historian","importer")
+                g1=g1.replace("ds","rd")
+                g1=g1.replace("stng","fastreader")
+                g1=g1.replace("downstream","export")
+                g1=g1.replace("svar","slowreader")
+                g1=g1.replace("Evts","_event")
+                g1=g1.replace("us","wr")
+                g1=g1.replace("collaborative","cgroup")
+                t =  kd2['group_lags'][g][t]['topic']
+                t1=t.replace("unity","t1")
+                t1=t1.replace("historian","import")
+                t1=t1.replace("Historian","Importer")
+                t1=t1.replace("src","id_")
+                t1=t1.replace("Evts","event")
+                t1=t1.replace("Svar","floats")
+                t1=t1.replace("Ds","incoming")
+                t1=t1.replace("Stng","outgoing")
+                t1=t1.replace("ngst","import")
+                table.add_row(g1,  t1,
                     f"{rates[g][t]['time_delta']:.2f}",
                     f"{humanize.metric(rates[g][t]['events_consumed'])}", 
                     f"{humanize.metric(rates[g][t]['events_arrival_rate'])}", 
