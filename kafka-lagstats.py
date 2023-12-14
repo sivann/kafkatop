@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Author: spiros.ioannou@powerfactors.com 2023
+# Author: spiros.ioannou 2023
 # Calculate kafka consumer lag statistics to estimate system health
 # 
 

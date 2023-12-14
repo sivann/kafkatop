@@ -2,3 +2,4 @@ venv
 *.swp
 __pycache__
 *.pex
+kafka-lagstats
