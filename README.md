@@ -38,3 +38,16 @@ options:
 
 ![Scresnshot](images/kafka-lagstats.png)
 
+# Building
+
+Requires python >3.10 in your path
+
+
+1. set the full path of PYTHON at the top of Makefile or add the PYTHON= parameter when calling make 
+2. call ```make pex```
+
+```
+make pex
+```
+This will create a pex executable which will include the python cod and all dependencies. It will need the python3 in the path to run.
+
