@@ -38,6 +38,8 @@ options:
 
 ![Scresnshot](images/kafka-lagstats.png)
 
+In the screenshot above, the 1st row is highlighted as the ETA to consume all the lag with the consuming rate of the last period is > 1 minute.
+
 # Building
 
 Requires python >=3.9 in your path
