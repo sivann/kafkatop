@@ -49,5 +49,5 @@ Requires python >=3.9 in your path
 ```
 make pex
 ```
-This will create a pex executable which will include the python cod and all dependencies. It will need the python3 in the path to run.
+This will create a "kafka-lagstats" pex executable which will include the python code and library dependencies all in one file. It will need the python3 in the path to run.
 
