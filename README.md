@@ -40,7 +40,7 @@ options:
 
 # Building
 
-Requires python >=3.10 in your path
+Requires python >=3.9 in your path
 
 
 1. set the full path of PYTHON at the top of Makefile or add the PYTHON= parameter when calling make 
