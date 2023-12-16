@@ -27,7 +27,7 @@ setup(
 	version = PKG_VER,
 	description = "KAFKA Lag statistics",
 	author = "Spiros Ioannou",
-	python_requires = ">=3.10",
+	python_requires = ">=3.9",
 	license = "",
 	zip_safe = False,
 	install_requires = install_requirements,
