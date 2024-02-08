@@ -12,12 +12,8 @@ import sys
 import re
 from setuptools import setup
 
-PKG_NAME = 'ifms_diagnostics'
+PKG_NAME = 'kafka-lagstats'
 PKG_VER = 0.1
-
-#v = open(os.path.join(os.path.dirname(__file__), 'ifms', '__init__.py'))
-#PKG_VER = re.compile(r".*__version__ = '(.*?)'", re.S).match(v.read()).group(1)
-#v.close()
 
 with open('requirements.txt') as f:
     install_requirements = f.read().splitlines()
