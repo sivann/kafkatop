@@ -53,5 +53,8 @@ pex:
 	echo "pex: VIRTUAL_ENV is set to $${VIRTUAL_ENV:?}" #errors if not set above
 	echo "PYTHON is set to $(PYTHON)" #errors if not set above
 	pip install pex
-	pex . --disable-cache -o kafka-lagstats --python-shebang $(PYTHON) -c kafka-lagstats.py
+	pex . --disable-cache -o kafka-lagstats -c kafka-lagstats.py --python-shebang $(PYTHON)
 
+#pex-multiplatform
+pex-mp:
+	pex-mp.sh
