@@ -1,4 +1,4 @@
 confluent-kafka==2.3.0
 humanize==4.9.0
-rich==12.6.0
+rich==13.7.0
 
