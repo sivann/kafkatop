@@ -57,4 +57,4 @@ pex:
 
 #pex-multiplatform
 pex-mp:
-	pex-mp.sh
+	./pex-mp.sh
