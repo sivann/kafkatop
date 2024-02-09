@@ -45,8 +45,9 @@ In the screenshot above, the 1st row is highlighted as the ETA to consume all th
 Requires python >=3.9 in your path
 
 
-1. set the full path of PYTHON at the top of Makefile or add the PYTHON= parameter when calling make 
-2. call ```make pex```
+1. set the full path of PYTHON at the top of Makefile or add the PYTHON= parameter when calling make
+2. ```make```
+3. ```make pex```
 
 ```
 make pex
