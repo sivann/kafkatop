@@ -1,9 +1,12 @@
 #!/bin/bash
 
+. venv/bin/activate
 if [[ -z "$VIRTUAL_ENV" ]] ; then
     echo "not running in virtualenv, exiting"
     exit 1
 fi
+
+pip install pex
 
 echo "Make sure all required python3's are in path"
 echo ""
