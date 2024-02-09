@@ -82,7 +82,7 @@ def list_consumer_groups(a, params):
             if params['kafka_group_include_pattern']:
                 if not re.search(params['kafka_group_include_pattern'], valid.group_id):
                     continue
-            if re.search(params['kafka_group_exclude_pattern'], valid.group_id):
+            if params['kafka_group_exclude_pattern'] and re.search(params['kafka_group_exclude_pattern'], valid.group_id):
                 continue
             if params['kafka_hide_empty_groups'] and valid.state == ConsumerGroupState.EMPTY:
                 continue
@@ -92,6 +92,10 @@ def list_consumer_groups(a, params):
             consumer_groups['properties'][valid.group_id]['is_simple'] = valid.is_simple_consumer_group
 
         #print("{} errors".format(len(list_consumer_groups_result.errors)))
+        if len(consumer_groups['ids']) == 0:
+            print("No consumer groups found, try altering --group-exclude-pattern or --group-include-pattern, check defaults",file=sys.stderr)
+            sys.exit(1)
+
         for error in list_consumer_groups_result.errors:
             print("    error: {}".format(error))
     except Exception:
@@ -521,11 +525,16 @@ def init_conf(args):
     a = AdminClient({'bootstrap.servers': broker})
     params['a'] = a
 
-    params['kafka_group_exclude_pattern']=re.compile(args.kafka_group_exclude_pattern)
-    if args.kafka_group_include_pattern is not None:
+    if len(args.kafka_group_exclude_pattern):
+        params['kafka_group_exclude_pattern']=re.compile(args.kafka_group_exclude_pattern)
+    else:
+        params['kafka_group_exclude_pattern']=None
+
+    if args.kafka_group_include_pattern is not None and len(args.kafka_group_include_pattern):
         params['kafka_group_include_pattern']=re.compile(args.kafka_group_include_pattern) 
     else:
         params['kafka_group_include_pattern']=None
+
     params['kafka_poll_period'] = int(args.kafka_poll_period)
     params['kafka_poll_iterations'] = int(args.kafka_poll_iterations)
     params['kafka_noinitial'] = int(args.kafka_noinitial)
