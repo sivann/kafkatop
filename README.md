@@ -11,8 +11,8 @@ CLI app to monitor real-time consumption and production rates on kafka broker. D
 
 # Usage
 ```
-usage: kafka-lagstats [-h] [--kafka-broker KAFKA_BROKER] [--text] [--poll-period KAFKA_POLL_PERIOD] [--poll-iterations KAFKA_POLL_ITERATIONS]
-                      [--group-exclude-pattern KAFKA_GROUP_EXCLUDE_PATTERN] [--group-include-pattern KAFKA_GROUP_INCLUDE_PATTERN] [--status] [--noinitial] [--hide-empty-groups]
+usage: kafka-lagstats.py [-h] [--kafka-broker KAFKA_BROKER] [--text] [--poll-period KAFKA_POLL_PERIOD] [--poll-iterations KAFKA_POLL_ITERATIONS] [--group-exclude-pattern KAFKA_GROUP_EXCLUDE_PATTERN]
+                         [--group-include-pattern KAFKA_GROUP_INCLUDE_PATTERN] [--status] [--noinitial] [--all]
 
 Kafka consumer statistics
 
@@ -26,12 +26,12 @@ options:
   --poll-iterations KAFKA_POLL_ITERATIONS
                         How many times to query and display stats. 0 = Inf (default: 15)
   --group-exclude-pattern KAFKA_GROUP_EXCLUDE_PATTERN
-                        If group matches regex, exclude (default: _[0-9]+$)
+                        If group matches regex, exclude (default: None)
   --group-include-pattern KAFKA_GROUP_INCLUDE_PATTERN
                         Only include if group matches regex (default: None)
   --status              Report health status in json and exit. (default: False)
   --noinitial           Do not display initial lag summary. (default: False)
-  --hide-empty-groups   Hide groups with no members. (default: False)
+  --all                 Show groups with no members. (default: False)
 ```
 
 # Screenshot
