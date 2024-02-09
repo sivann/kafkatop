@@ -84,7 +84,7 @@ def list_consumer_groups(a, params):
                     continue
             if params['kafka_group_exclude_pattern'] and re.search(params['kafka_group_exclude_pattern'], valid.group_id):
                 continue
-            if params['kafka_hide_empty_groups'] and valid.state == ConsumerGroupState.EMPTY:
+            if params['kafka_show_empty_groups']==False and valid.state == ConsumerGroupState.EMPTY:
                 continue
             consumer_groups['ids'].append(valid.group_id)
             consumer_groups['properties'][valid.group_id] = {}
@@ -525,7 +525,7 @@ def init_conf(args):
     a = AdminClient({'bootstrap.servers': broker})
     params['a'] = a
 
-    if len(args.kafka_group_exclude_pattern):
+    if args.kafka_group_exclude_pattern is not None and len(args.kafka_group_exclude_pattern):
         params['kafka_group_exclude_pattern']=re.compile(args.kafka_group_exclude_pattern)
     else:
         params['kafka_group_exclude_pattern']=None
@@ -538,7 +538,7 @@ def init_conf(args):
     params['kafka_poll_period'] = int(args.kafka_poll_period)
     params['kafka_poll_iterations'] = int(args.kafka_poll_iterations)
     params['kafka_noinitial'] = int(args.kafka_noinitial)
-    params['kafka_hide_empty_groups'] = int(args.kafka_hide_empty_groups)
+    params['kafka_show_empty_groups'] = int(args.kafka_show_empty_groups)
 
     return params
 
@@ -554,11 +554,11 @@ if __name__ == '__main__':
     argparser.add_argument('--text', dest='text', help='Only plain text, no rich output.', required = False, default=False, action='store_true' )
     argparser.add_argument('--poll-period', dest='kafka_poll_period', help='Kafka offset poll period (seconds) for evts/sec calculation', required = False, default=5)
     argparser.add_argument('--poll-iterations', dest='kafka_poll_iterations', help='How many times to query and display stats. 0 = Inf', required = False, default=15)
-    argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='If group matches regex, exclude ', required = False, default='_[0-9]+$')
+    argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='If group matches regex, exclude ', required = False, default=None )# default='_[0-9]+$')
     argparser.add_argument('--group-include-pattern', dest='kafka_group_include_pattern', help='Only include if group matches regex', required = False, default=None)
     argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
     argparser.add_argument('--noinitial', dest='kafka_noinitial', help='Do not display initial lag summary.', default=False, required = False, action='store_true')
-    argparser.add_argument('--hide-empty-groups', dest='kafka_hide_empty_groups', help='Hide groups with no members.', default=False, required = False, action='store_true')
+    argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
     args = argparser.parse_args()
 
     params = init_conf(args)
