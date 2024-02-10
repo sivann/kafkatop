@@ -15,6 +15,9 @@ from setuptools import setup
 PKG_NAME = 'kafka-lagstats'
 PKG_VER = 0.1
 
+with open('tag.txt') as f:
+    PKG_VER = f.read().strip()
+
 with open('requirements.txt') as f:
     install_requirements = f.read().splitlines()
 
