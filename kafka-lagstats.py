@@ -79,8 +79,8 @@ def list_consumer_groups(a, params):
         #print("{} consumer groups".format(len(list_consumer_groups_result.valid)))
         for valid in list_consumer_groups_result.valid:
             #print("GROUP id: {} is_simple: {} state: {}".format(valid.group_id, valid.is_simple_consumer_group, valid.state))
-            if params['kafka_group_include_pattern']:
-                if not re.search(params['kafka_group_include_pattern'], valid.group_id):
+            if params['kafka_group_filter_pattern']:
+                if not re.search(params['kafka_group_filter_pattern'], valid.group_id):
                     continue
             if params['kafka_group_exclude_pattern'] and re.search(params['kafka_group_exclude_pattern'], valid.group_id):
                 continue
@@ -457,6 +457,8 @@ def lag_show_rich(params):
                     row_style='on dark_red' #also: gray23 ,  reverse
                 else:
                     row_style=None
+                    if params['kafka_only_issues']: # don't display ok rows
+                        continue
 
 
                 g1=g.replace("unity","c1")
@@ -530,15 +532,16 @@ def init_conf(args):
     else:
         params['kafka_group_exclude_pattern']=None
 
-    if args.kafka_group_include_pattern is not None and len(args.kafka_group_include_pattern):
-        params['kafka_group_include_pattern']=re.compile(args.kafka_group_include_pattern) 
+    if args.kafka_group_filter_pattern is not None and len(args.kafka_group_filter_pattern):
+        params['kafka_group_filter_pattern']=re.compile(args.kafka_group_filter_pattern) 
     else:
-        params['kafka_group_include_pattern']=None
+        params['kafka_group_filter_pattern']=None
 
     params['kafka_poll_period'] = int(args.kafka_poll_period)
     params['kafka_poll_iterations'] = int(args.kafka_poll_iterations)
     params['kafka_noinitial'] = int(args.kafka_noinitial)
     params['kafka_show_empty_groups'] = int(args.kafka_show_empty_groups)
+    params['kafka_only_issues'] = int(args.kafka_only_issues)
 
     return params
 
@@ -555,9 +558,10 @@ if __name__ == '__main__':
     argparser.add_argument('--poll-period', dest='kafka_poll_period', help='Kafka offset poll period (seconds) for evts/sec calculation', required = False, default=5)
     argparser.add_argument('--poll-iterations', dest='kafka_poll_iterations', help='How many times to query and display stats. 0 = Inf', required = False, default=15)
     argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='If group matches regex, exclude ', required = False, default=None )# default='_[0-9]+$')
-    argparser.add_argument('--group-include-pattern', dest='kafka_group_include_pattern', help='Only include if group matches regex', required = False, default=None)
+    argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Include *only* the groups which match regex', required = False, default=None)
     argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
     argparser.add_argument('--noinitial', dest='kafka_noinitial', help='Do not display initial lag summary.', default=False, required = False, action='store_true')
+    argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
     argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
     args = argparser.parse_args()
 
