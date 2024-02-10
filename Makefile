@@ -22,6 +22,7 @@ ccso = $(shell tput smso)
 .SILENT:
 
 init: $(VENV_DIR)
+	#sed -i 
 
 $(VENV_DIR):
 	echo "Creating $(VENV_DIR)"
@@ -53,6 +54,7 @@ pex:
 	echo "pex: VIRTUAL_ENV is set to $${VIRTUAL_ENV:?}" #errors if not set above
 	echo "PYTHON is set to $(PYTHON)" #errors if not set above
 	pip install pex
+	sed -i "s/%version%/$(cat tag.txt)/" kafka-lagstats.py
 	pex . --disable-cache -o kafka-lagstats -c kafka-lagstats.py --python-shebang $(PYTHON)
 
 #pex-multiplatform

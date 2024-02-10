@@ -34,7 +34,7 @@ from rich.table import Table
 from rich.live import Live
 from rich import box
 
-VERSION='%version%'
+VERSION='1.2.3'
 
 
 
