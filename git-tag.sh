@@ -2,9 +2,11 @@
 
 set -e
 
+
 # this is for macOS
 [ -x /usr/local/bin/gsed ] && sed=/usr/local/bin/gsed || sed=sed
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 lasthash=`git log --decorate=full --all --pretty=format:'%h %d'  |grep 'refs/tags'|head -1|awk '{print $1}'`
 lasttag=`git describe --tags $lasthash`
 
@@ -48,6 +50,8 @@ git push
 echo ""
 #read -p "Press [Enter] key to tag ${newtag}: "
 git tag -a $newtag -m "Version ${newtag}"
+
+echo "$newtag" >> tag.txt
 
 echo ""
 #read -p "Press [Enter] key to push tags: "
