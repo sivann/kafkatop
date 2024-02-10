@@ -429,7 +429,7 @@ def lag_show_rich(params):
     def generate_table(iiteration, kd, rates) -> Table:
         #print('GTable, iteration:',iteration)
         dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        table = Table(title=f"Lags and Rates\n[bold cyan]{dt} \[{iteration}]", 
+        table = Table(title=f"Lags and Rates\n[bold cyan]Last poll: {dt}, poll period: {params['kafka_poll_period']}s, poll: \[{iteration}]", 
         show_lines=False, 
         box=box.SIMPLE_HEAD,
         caption="Legend: [cyan]INFO[/] [bold  green]OK[/] [bold yellow]WARN[/] [bold magenta]ERR[/] [bold red]CRIT[/]")
@@ -495,8 +495,8 @@ def lag_show_rich(params):
 
 
     iteration=0
+    print("Please wait, calculating initial rates...")
     kd1 = calc_lag(a, params)
-    print("Please wait...")
     #time.sleep(params['kafka_poll_period'])
     time.sleep(3) 
     kd2 = calc_lag(a, params)
