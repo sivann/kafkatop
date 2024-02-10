@@ -34,6 +34,7 @@ from rich.table import Table
 from rich.live import Live
 from rich import box
 
+VERSION='%version%'
 
 
 
@@ -563,6 +564,7 @@ if __name__ == '__main__':
     argparser.add_argument('--noinitial', dest='kafka_noinitial', help='Do not display initial lag summary.', default=False, required = False, action='store_true')
     argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
     argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
+    argparser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     args = argparser.parse_args()
 
     params = init_conf(args)
