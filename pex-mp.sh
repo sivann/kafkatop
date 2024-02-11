@@ -16,7 +16,7 @@ pip install pex
 
 echo "Make sure all required python3's are in path"
 echo ""
-echo "Creating pex with for following platforms:"
+echo "*** Creating pex with for following platforms:"
 pex3 interpreter inspect --all --interpreter-constraint "CPython>=3.9" --verbose --indent 4 | jq -r  .platform
 
 # Iterate over platforms:
@@ -25,13 +25,15 @@ deactivate
 
 rm -fr venv-* wh-*
 mkdir wh
-echo "Gathering platform requirements."
+echo ""
+echo "*** Gathering platform requirements."
 cat platforms.json | jq -c '.' |while read x; 
 do
     cppath=$(echo "$x" | jq -r .path) 
     cpversion=$(echo "$x" | jq -r .version)
     platform=$(echo "$x" | jq -r .platform)
-    echo "Gathering platform requirements for python: $cpversion, platform: $platform, interpreter: $cppath"
+    echo ""
+    echo "*** Gathering platform requirements for python: $cpversion, platform: $platform, interpreter: $cppath"
     
     $cppath -m venv venv-${cpversion}
     . venv-${cpversion}/bin/activate
@@ -45,10 +47,11 @@ done
 
 platforms_args=$(cat platforms.json | jq .platform |  sed -e 's/^/--platform /' | tr '\n' ' ')
 echo ""
-echo "Now run the following to create the multi-platform pex:"
-echo pex . --disable-cache -o kafkatop -c kafkatop --python-shebang '#!/usr/bin/env python3' -f wh --resolve-local-platforms  $platforms_args >> makepex.$$
+echo pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang '#!/usr/bin/env python3' -f wh --resolve-local-platforms  $platforms_args > makepex.$$
+chmod +x  makepex.$$
+echo "*** Now run the following to create the multi-platform pex: ./makepex.$$"
 ./makepex.$$
 
 # If you just run the above it doesn't run(!) it needs to expand the platforms_args manually
 
-#pex . --disable-cache -o kafkatop -c kafkatop --python-shebang '#!/usr/bin/env python3' --repo wh --no-pypi --no-build --resolve-local-platforms --platform "manylinux_2_34_x86_64-cp-3.10.8-cp310" --platform "manylinux_2_34_x86_64-cp-3.11.8-cp311" --platform "manylinux_2_34_x86_64-cp-3.9.18-cp39"
+#pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang '#!/usr/bin/env python3' --repo wh --no-pypi --no-build --resolve-local-platforms --platform "manylinux_2_34_x86_64-cp-3.10.8-cp310" --platform "manylinux_2_34_x86_64-cp-3.11.8-cp311" --platform "manylinux_2_34_x86_64-cp-3.9.18-cp39"

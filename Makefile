@@ -22,6 +22,7 @@ ccso = $(shell tput smso)
 .SILENT:
 
 init: $(VENV_DIR)
+	echo "$(VENV_DIR) exists, type first 'make clean' to start again if needed"
 	#sed -i 
 
 $(VENV_DIR):
@@ -47,7 +48,7 @@ venv_update: $(VENV_DIR)
 clean: ## >> remove all environment and build files
 	@echo ""
 	@echo "$(ccso)--> Removing virtual environment $(ccend)"
-	rm -rf $(VENV_DIR) makepex.* wh/
+	rm -rf $(VENV_DIR) makepex.* wh/ venv-*/
 
 pex:
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
