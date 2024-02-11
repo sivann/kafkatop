@@ -47,11 +47,7 @@ done
 
 platforms_args=$(cat platforms.json | jq .platform |  sed -e 's/^/--platform /' | tr '\n' ' ')
 echo ""
-echo pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang '#!/usr/bin/env python3' -f wh --resolve-local-platforms  $platforms_args > makepex.$$
+echo 'pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang "#!/usr/bin/env python3" -f wh --resolve-local-platforms'  $platforms_args > makepex.$$
 chmod +x  makepex.$$
-echo "*** Now run the following to create the multi-platform pex: ./makepex.$$"
+echo "*** Now running the following to create the multi-platform pex: ./makepex.$$"
 ./makepex.$$
-
-# If you just run the above it doesn't run(!) it needs to expand the platforms_args manually
-
-#pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang '#!/usr/bin/env python3' --repo wh --no-pypi --no-build --resolve-local-platforms --platform "manylinux_2_34_x86_64-cp-3.10.8-cp310" --platform "manylinux_2_34_x86_64-cp-3.11.8-cp311" --platform "manylinux_2_34_x86_64-cp-3.9.18-cp39"
