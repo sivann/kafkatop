@@ -2,6 +2,8 @@
 
 # Helps create multiplatform-pex
 
+sed -i "s/^VERSION=.*/VERSION=$(cat tag.txt)/" kafkatop.py
+
 echo "Gathering python platform info"
 rm -fr venv
 python3 -m venv venv
@@ -47,7 +49,9 @@ done
 
 platforms_args=$(cat platforms.json | jq .platform |  sed -e 's/^/--platform /' | tr '\n' ' ')
 echo ""
-echo 'pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang "#!/usr/bin/env python3" -f wh --resolve-local-platforms'  $platforms_args > makepex.$$
+rm -f makepex.*
+echo '. venv/bin/activate' > makepex.$$
+echo 'pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang "#!/usr/bin/env python3" -f wh --resolve-local-platforms'  $platforms_args >> makepex.$$
 chmod +x  makepex.$$
 echo "*** Now running the following to create the multi-platform pex: ./makepex.$$"
 ./makepex.$$
