@@ -4,6 +4,7 @@ CLI app to monitor real-time consumption and production rates on kafka broker.
 
 Shows:
 
+* A brief with topic and partitions lists and consumer group statuses
 * Rate of events written to topics
 * Rate of events consumed by consumer groups, per topic
 * Shows LAG per consumer group and topic
