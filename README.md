@@ -1,12 +1,17 @@
 # kafkatop
 
-CLI app to monitor real-time consumption and production rates on kafka broker. Displays:
+CLI app to monitor real-time consumption and production rates on kafka broker. 
+
+Shows:
 
 * Rate of events written to topics
-* Rate of events consumed by consumer groups
+* Rate of events consumed by consumer groups, per topic
 * Shows LAG per consumer group and topic
 * Calculates ETA for each consumer group to consume the remaining topic events
 * Supports multiple topics/consumer group
+* Supports showing only troublesome groups
+* Supports exporting status in json for mass health surveillance of remote hosts
+
 
 
 # Usage
