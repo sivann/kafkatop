@@ -47,15 +47,15 @@ venv_update: $(VENV_DIR)
 clean: ## >> remove all environment and build files
 	@echo ""
 	@echo "$(ccso)--> Removing virtual environment $(ccend)"
-	rm -rf $(VENV_DIR)
+	rm -rf $(VENV_DIR) makepex.* wh/
 
 pex:
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
 	echo "pex: VIRTUAL_ENV is set to $${VIRTUAL_ENV:?}" #errors if not set above
 	echo "PYTHON is set to $(PYTHON)" #errors if not set above
 	pip install pex
-	sed -i "s/%version%/$(cat tag.txt)/" kafka-lagstats.py
-	pex . --disable-cache -o kafka-lagstats -c kafka-lagstats.py --python-shebang $(PYTHON)
+	sed -i "s/%version%/$(cat tag.txt)/" kafkatop.py
+	pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang $(PYTHON)
 
 #pex-multiplatform
 pex-mp:
