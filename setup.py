@@ -12,7 +12,7 @@ import sys
 import re
 from setuptools import setup
 
-PKG_NAME = 'kafka-lagstats'
+PKG_NAME = 'kafkatop'
 PKG_VER = 0.1
 
 with open('tag.txt') as f:
@@ -30,7 +30,7 @@ setup(
 	license = "",
 	zip_safe = False,
 	install_requires = install_requirements,
-	scripts= ['kafka-lagstats.py'],
+	scripts= ['kafkatop.py'],
 	packages = []
 	)
 
