@@ -403,7 +403,7 @@ def lag_show_rich(params):
     a = params['a']
     kd = calc_lag(a, params)
 
-    if not params['kafka_noinitial']:
+    if params['kafka_summary']:
         table1 = Table(title="Initial Lag summary", show_lines=False)
         table1.add_column("Group", justify="left", style="cyan", no_wrap=True)
         table1.add_column("Topic", style="cyan")
@@ -443,12 +443,8 @@ def lag_show_rich(params):
         table.add_column("Est. time\nto consume", justify="right", style="green")
         table.add_column("Total Lag", justify="right", style="magenta")
 
-        gcnt=0
         for g in rates:
-            tcnt=0
-            gcnt+=1
             for t in rates[g]:
-                tcnt+=1
                 state = kd['consumer_groups']['properties'][g]['state']
                 if 'events_consumed' not in rates[g][t]:
                     continue
@@ -464,11 +460,9 @@ def lag_show_rich(params):
                     if params['kafka_only_issues']: # don't display ok rows
                         continue
 
-
-                g1=g.replace("unity","c1")
                 if args.anonymize:
-                    g1=gcnt
-                    t1=tcnt
+                    g1 = f"group {abs(hash(g)) % (10 ** 6):6}"
+                    t1 = f"topic {abs(hash(t)) % (10 ** 6):6}"
                 else:
                     g1=g
                     t1=t
@@ -533,7 +527,7 @@ def init_conf(args):
 
     params['kafka_poll_period'] = int(args.kafka_poll_period)
     params['kafka_poll_iterations'] = int(args.kafka_poll_iterations)
-    params['kafka_noinitial'] = int(args.kafka_noinitial)
+    params['kafka_summary'] = int(args.kafka_summary)
     params['kafka_show_empty_groups'] = int(args.kafka_show_empty_groups)
     params['kafka_only_issues'] = int(args.kafka_only_issues)
 
@@ -554,7 +548,7 @@ if __name__ == '__main__':
     argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='If group matches regex, exclude ', required = False, default=None )# default='_[0-9]+$')
     argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Include *only* the groups which match regex', required = False, default=None)
     argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
-    argparser.add_argument('--noinitial', dest='kafka_noinitial', help='Do not display initial lag summary.', default=False, required = False, action='store_true')
+    argparser.add_argument('--summary', dest='kafka_summary', help='Do not display initial lag summary.', default=False, required = False, action='store_true')
     argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
     argparser.add_argument('--anonymize', dest='anonymize', help='Anonymize topics and groups.', default=False, required = False, action='store_true')
     argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
