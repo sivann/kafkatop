@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -e
-
 
 # this is for macOS
 [ -x /usr/local/bin/gsed ] && sed=/usr/local/bin/gsed || sed=sed
