@@ -44,10 +44,14 @@ if [ `git status --short|wc -l` -ne 0 ] ; then
 fi
 
 echo ""
-#read -p "Press [Enter] key to push :"
+
 
 echo "$newtag" > tag.txt
+sed -i "s/^VERSION.*/VERSION='$newtag'/" kafkatop.py
 git add tag.txt
+git add kafkatop.py
+git diff
+read -p "Press [Enter] key commit changes:"
 git commit -m "$newtag in tag.txt"
 git push 
 
