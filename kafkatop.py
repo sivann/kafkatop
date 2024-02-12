@@ -37,7 +37,6 @@ from rich import box
 VERSION='1.8'
 
 
-
 def describe_consumer_groups(a, group_ids):
     """
     Return consumer group assigned topics and partitions
