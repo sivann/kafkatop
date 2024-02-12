@@ -51,7 +51,7 @@ echo ""
 #read -p "Press [Enter] key to tag ${newtag}: "
 git tag -a $newtag -m "Version ${newtag}"
 
-echo "$newtag" >> tag.txt
+echo "$newtag" > tag.txt
 
 echo ""
 #read -p "Press [Enter] key to push tags: "
