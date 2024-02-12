@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Author: spiros.ioannou 2023
+# Author: spiros ioannou 2023
 # Calculate kafka consumer lag statistics to estimate system health
 # 
 
@@ -34,8 +34,7 @@ from rich.table import Table
 from rich.live import Live
 from rich import box
 
-VERSION=1.5
-
+VERSION='1.8'
 
 
 def describe_consumer_groups(a, group_ids):
@@ -270,6 +269,9 @@ def calc_rate(kd1, kd2):
         for t in kd1['group_offsets'][g]: # t: topic. Probably only one topic in consumergroup
             #print(f'Topic:{t}, group:{g}')
 
+            if g not in kd2['group_offsets'] or g not in  kd1['group_offsets']:
+                print(f"WARNING: group {g} disappeared, skipping")
+                continue # group disappeared
             po1 = kd1['group_offsets'][g][t] # part offsets
             po2 = kd2['group_offsets'][g][t] # part offsets
             po1_sum = sum(po1.values())
@@ -403,7 +405,7 @@ def lag_show_rich(params):
     a = params['a']
     kd = calc_lag(a, params)
 
-    if not params['kafka_noinitial']:
+    if params['kafka_summary']:
         table1 = Table(title="Initial Lag summary", show_lines=False)
         table1.add_column("Group", justify="left", style="cyan", no_wrap=True)
         table1.add_column("Topic", style="cyan")
@@ -428,7 +430,6 @@ def lag_show_rich(params):
 
 
     def generate_table(iiteration, kd, rates) -> Table:
-        #print('GTable, iteration:',iteration)
         dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         table = Table(title=f"Lags and Rates\n[bold cyan]Last poll: {dt}, poll period: {params['kafka_poll_period']}s, poll: \[{iteration}]", 
         show_lines=False, 
@@ -461,27 +462,15 @@ def lag_show_rich(params):
                     if params['kafka_only_issues']: # don't display ok rows
                         continue
 
+                if args.anonymize:
+                    g1 = f"group {abs(hash(g)) % (10 ** 6):6}"
+                    t1 = f"topic {abs(hash(t)) % (10 ** 6):6}"
+                else:
+                    g1=g
+                    t1=t
 
-                g1=g.replace("unity","c1")
-                g1=g1.replace("src","datasrc")
-                g1=g1.replace("historian","importer")
-                g1=g1.replace("ds","rd")
-                g1=g1.replace("stng","fastreader")
-                g1=g1.replace("downstream","export")
-                g1=g1.replace("svar","slowreader")
-                g1=g1.replace("Evts","_event")
-                g1=g1.replace("us","wr")
-                g1=g1.replace("collaborative","cgroup")
                 t =  kd2['group_lags'][g][t]['topic']
-                t1=t.replace("unity","t1")
-                t1=t1.replace("historian","import")
-                t1=t1.replace("Historian","Importer")
-                t1=t1.replace("src","id_")
-                t1=t1.replace("Evts","event")
-                t1=t1.replace("Svar","floats")
-                t1=t1.replace("Ds","incoming")
-                t1=t1.replace("Stng","outgoing")
-                t1=t1.replace("ngst","import")
+
                 table.add_row(g1,  t1,
                     f"{rates[g][t]['time_delta']:.2f}",
                     f"{humanize.metric(rates[g][t]['events_consumed'])}", 
@@ -540,7 +529,7 @@ def init_conf(args):
 
     params['kafka_poll_period'] = int(args.kafka_poll_period)
     params['kafka_poll_iterations'] = int(args.kafka_poll_iterations)
-    params['kafka_noinitial'] = int(args.kafka_noinitial)
+    params['kafka_summary'] = int(args.kafka_summary)
     params['kafka_show_empty_groups'] = int(args.kafka_show_empty_groups)
     params['kafka_only_issues'] = int(args.kafka_only_issues)
 
@@ -561,8 +550,9 @@ if __name__ == '__main__':
     argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='If group matches regex, exclude ', required = False, default=None )# default='_[0-9]+$')
     argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Include *only* the groups which match regex', required = False, default=None)
     argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
-    argparser.add_argument('--noinitial', dest='kafka_noinitial', help='Do not display initial lag summary.', default=False, required = False, action='store_true')
+    argparser.add_argument('--summary', dest='kafka_summary', help='Display a groups, topics, partitions, and lags summary.', default=False, required = False, action='store_true')
     argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
+    argparser.add_argument('--anonymize', dest='anonymize', help='Anonymize topics and groups.', default=False, required = False, action='store_true')
     argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
     argparser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     args = argparser.parse_args()

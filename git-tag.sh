@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -e
-
 
 # this is for macOS
 [ -x /usr/local/bin/gsed ] && sed=/usr/local/bin/gsed || sed=sed
@@ -44,14 +42,20 @@ if [ `git status --short|wc -l` -ne 0 ] ; then
 fi
 
 echo ""
-#read -p "Press [Enter] key to push :"
+
+
+echo "$newtag" > tag.txt
+sed -i "s/^VERSION.*/VERSION='$newtag'/" kafkatop.py
+git diff
+git add tag.txt
+git add kafkatop.py
+read -p "Press [Enter] key commit changes:"
+git commit -m "$newtag in tag.txt"
 git push 
 
 echo ""
 #read -p "Press [Enter] key to tag ${newtag}: "
 git tag -a $newtag -m "Version ${newtag}"
-
-echo "$newtag" > tag.txt
 
 echo ""
 #read -p "Press [Enter] key to push tags: "

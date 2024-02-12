@@ -55,7 +55,6 @@ pex:
 	echo "pex: VIRTUAL_ENV is set to $${VIRTUAL_ENV:?}" #errors if not set above
 	echo "PYTHON is set to $(PYTHON)" #errors if not set above
 	pip install pex
-	sed -i "s/^VERSION=.*/VERSION=$(cat tag.txt)/" kafkatop.py
 	pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang $(PYTHON)
 
 #pex-multiplatform
