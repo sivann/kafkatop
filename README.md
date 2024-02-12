@@ -47,7 +47,7 @@ options:
 
 # Screenshot
 
-![Scresnshot](images/kafkatop.png)
+![Scresnshot](images/kafkatop2.png)
 
 In the screenshot above, the 1st row is highlighted as the ETA to consume all the lag, with the consuming rate of the last period, is > 1 minute.
 
