@@ -21,7 +21,7 @@ Supports:
 # Usage
 ```
 usage: kafkatop.py [-h] [--kafka-broker KAFKA_BROKER] [--text] [--poll-period KAFKA_POLL_PERIOD] [--poll-iterations KAFKA_POLL_ITERATIONS] [--group-exclude-pattern KAFKA_GROUP_EXCLUDE_PATTERN]
-                   [--group-filter-pattern KAFKA_GROUP_FILTER_PATTERN] [--status] [--noinitial] [--only-issues] [--all] [--version]
+                   [--group-filter-pattern KAFKA_GROUP_FILTER_PATTERN] [--status] [--summary] [--only-issues] [--anonymize] [--all] [--version]
 
 Kafka consumer statistics
 
@@ -39,8 +39,9 @@ options:
   --group-filter-pattern KAFKA_GROUP_FILTER_PATTERN
                         Include *only* the groups which match regex (default: None)
   --status              Report health status in json and exit. (default: False)
-  --noinitial           Do not display initial lag summary. (default: False)
+  --summary             Display a groups, topics, partitions, and lags summary. (default: False)
   --only-issues         Only show rows with issues. (default: False)
+  --anonymize           Anonymize topics and groups. (default: False)
   --all                 Show groups with no members. (default: False)
   --version             show program's version number and exit
 ```
