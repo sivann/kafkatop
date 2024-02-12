@@ -270,6 +270,9 @@ def calc_rate(kd1, kd2):
         for t in kd1['group_offsets'][g]: # t: topic. Probably only one topic in consumergroup
             #print(f'Topic:{t}, group:{g}')
 
+            if g not in kd2['group_offsets'] or g not in  kd1['group_offsets']:
+                print(f"WARNING: group {g} disappeared, skipping")
+                continue # group disappeared
             po1 = kd1['group_offsets'][g][t] # part offsets
             po2 = kd2['group_offsets'][g][t] # part offsets
             po1_sum = sum(po1.values())
@@ -548,7 +551,7 @@ if __name__ == '__main__':
     argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='If group matches regex, exclude ', required = False, default=None )# default='_[0-9]+$')
     argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Include *only* the groups which match regex', required = False, default=None)
     argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
-    argparser.add_argument('--summary', dest='kafka_summary', help='Do not display initial lag summary.', default=False, required = False, action='store_true')
+    argparser.add_argument('--summary', dest='kafka_summary', help='Display a groups, topics, partitions, and lags summary.', default=False, required = False, action='store_true')
     argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
     argparser.add_argument('--anonymize', dest='anonymize', help='Anonymize topics and groups.', default=False, required = False, action='store_true')
     argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
