@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Author: spiros.ioannou 2023
+# Author: spiros ioannou 2023
 # Calculate kafka consumer lag statistics to estimate system health
 # 
 
@@ -428,7 +428,6 @@ def lag_show_rich(params):
 
 
     def generate_table(iiteration, kd, rates) -> Table:
-        #print('GTable, iteration:',iteration)
         dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         table = Table(title=f"Lags and Rates\n[bold cyan]Last poll: {dt}, poll period: {params['kafka_poll_period']}s, poll: \[{iteration}]", 
         show_lines=False, 
@@ -444,8 +443,12 @@ def lag_show_rich(params):
         table.add_column("Est. time\nto consume", justify="right", style="green")
         table.add_column("Total Lag", justify="right", style="magenta")
 
+        gcnt=0
         for g in rates:
+            tcnt=0
+            gcnt+=1
             for t in rates[g]:
+                tcnt+=1
                 state = kd['consumer_groups']['properties'][g]['state']
                 if 'events_consumed' not in rates[g][t]:
                     continue
@@ -463,25 +466,15 @@ def lag_show_rich(params):
 
 
                 g1=g.replace("unity","c1")
-                g1=g1.replace("src","datasrc")
-                g1=g1.replace("historian","importer")
-                g1=g1.replace("ds","rd")
-                g1=g1.replace("stng","fastreader")
-                g1=g1.replace("downstream","export")
-                g1=g1.replace("svar","slowreader")
-                g1=g1.replace("Evts","_event")
-                g1=g1.replace("us","wr")
-                g1=g1.replace("collaborative","cgroup")
+                if args.anonymize:
+                    g1=gcnt
+                    t1=tcnt
+                else:
+                    g1=g
+                    t1=t
+
                 t =  kd2['group_lags'][g][t]['topic']
-                t1=t.replace("unity","t1")
-                t1=t1.replace("historian","import")
-                t1=t1.replace("Historian","Importer")
-                t1=t1.replace("src","id_")
-                t1=t1.replace("Evts","event")
-                t1=t1.replace("Svar","floats")
-                t1=t1.replace("Ds","incoming")
-                t1=t1.replace("Stng","outgoing")
-                t1=t1.replace("ngst","import")
+
                 table.add_row(g1,  t1,
                     f"{rates[g][t]['time_delta']:.2f}",
                     f"{humanize.metric(rates[g][t]['events_consumed'])}", 
@@ -563,6 +556,7 @@ if __name__ == '__main__':
     argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
     argparser.add_argument('--noinitial', dest='kafka_noinitial', help='Do not display initial lag summary.', default=False, required = False, action='store_true')
     argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
+    argparser.add_argument('--anonymize', dest='anonymize', help='Anonymize topics and groups.', default=False, required = False, action='store_true')
     argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
     argparser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     args = argparser.parse_args()
