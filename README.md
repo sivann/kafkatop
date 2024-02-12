@@ -51,6 +51,15 @@ options:
 
 In the screenshot above (anonymized topics/groups), the 1st row is highlighted as the ETA to consume all the lag, with the consuming rate of the last period, is > 1 minute.
 
+![Scresnshot](images/kafkatop3.png)
+
+A healthy system. 
+
+![Scresnshot](images/kafkatop4-summary.png)
+
+A summary of (anonymized) groups, topics, partitions, lag (median lag of all partitions) and consumer group state.
+
+
 # Installing
 You may download the multi-platform pex file from [releases](https://github.com/sivann/kafkatop/releases). It is a one-file executable, compatible with x86_64 and just needs python 3.9, 3.10 or 3.11 in your path.
 
