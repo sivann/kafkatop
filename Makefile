@@ -48,7 +48,7 @@ venv_update: $(VENV_DIR)
 clean: ## >> remove all environment and build files
 	@echo ""
 	@echo "$(ccso)--> Removing virtual environment $(ccend)"
-	rm -rf $(VENV_DIR) makepex.* wh/ venv-*/
+	rm -rf $(VENV_DIR) makepex.* wh/ venv-*/ platforms.json kafkatop
 
 pex:
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
