@@ -78,3 +78,5 @@ make pex
 ```
 This will create a "kafkatop" pex executable which will include the python code and library dependencies all in one file. It will need the python3 in the path to run.
 
+# License
+This project is licensed under the terms of the MIT license.
