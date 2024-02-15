@@ -37,6 +37,7 @@ from rich import box
 VERSION='1.8'
 
 
+# a: kafka AdminClient instance
 def describe_consumer_groups(a, group_ids):
     """
     Return consumer group assigned topics and partitions
@@ -65,15 +66,26 @@ def describe_consumer_groups(a, group_ids):
             raise
     return consumer_group_topics
 
+def list_topics(params, topic_name=None):
+    a=params['a']
+
+    if topic_name:
+        r = a.list_topics(topic=topic_name, timeout=30)
+    else:
+        r = a.list_topics(timeout=30)
+
+    return r
+
 """ consumer_groups: {group_ids: [group1,group2,..],
         properties:[ {group_id}={state:..., type:...}
+        a: AdminClient instance
 """
 def list_consumer_groups(a, params):
     consumer_groups={'ids':[], 'properties':{}}
     # states: https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html#confluent_kafka.ConsumerGroupState
     s=[]
     states = {ConsumerGroupState[state] for state in s}
-    future = a.list_consumer_groups(request_timeout=10, states=states)
+    future = a.list_consumer_groups(request_timeout=20, states=states)
     try:
         list_consumer_groups_result = future.result()
         #print("{} consumer groups".format(len(list_consumer_groups_result.valid)))
@@ -307,7 +319,8 @@ def lag_show_text(params):
     kd = calc_lag(a, params)
     for g in kd['group_lags']:
         for t in kd['group_lags'][g]:
-            print(f"Group: {g:<45}, topic:{t:20}, partitions:{len(kd['group_lags'][g][t]['partlags'].keys()):5}, LAG min: {kd['group_lags'][g][t]['min']:10.1f}, max: {kd['group_lags'][g][t]['max']:10.1f}, median: {kd['group_lags'][g][t]['median']}")
+            parts_total = topic_nparts(params, t)
+            print(f"Group: {g:<45}, topic: {t:20}, partitions:{len(kd['group_lags'][g][t]['partlags'].keys()):5}/{parts_total:5}, LAG min: {kd['group_lags'][g][t]['min']:10.1f}, max: {kd['group_lags'][g][t]['max']:10.1f}, median: {kd['group_lags'][g][t]['median']}")
  
     time.sleep(params['kafka_poll_period'])
     kd1 = kd
@@ -407,11 +420,11 @@ def lag_show_rich(params):
 
     if params['kafka_summary']:
         table1 = Table(title="Initial Lag summary", show_lines=False)
-        table1.add_column("Group", justify="left", style="cyan", no_wrap=True)
+        table1.add_column("Consumer Group", justify="left", style="cyan", no_wrap=True)
         table1.add_column("Topic", style="cyan")
-        table1.add_column("Partitions", justify="right", style="green")
+        table1.add_column("Partitions\n(with groups/total)", justify="right", style="green")
         table1.add_column("Lag (part median)", justify="right", style="green")
-        table1.add_column("Group State", justify="left", style="green")
+        table1.add_column("Consumer Group State", justify="left", style="green")
         for g in kd['group_lags']:
             for t in kd['group_lags'][g]:
                 state = kd['consumer_groups']['properties'][g]['state']
@@ -419,8 +432,12 @@ def lag_show_rich(params):
                     stc="[red]"
                 else:
                     stc="[green]"
-                table1.add_row(g,kd['group_lags'][g][t]['topic'] , 
-                    str(len(kd['group_lags'][g][t]['partlags'].keys())), 
+                topic_name = kd['group_lags'][g][t]['topic']
+                parts_with_consumers = str(len(kd['group_lags'][g][t]['partlags'].keys()))
+                parts_total = topic_nparts(params, topic_name)
+
+                table1.add_row(g, topic_name,
+                    f"{parts_with_consumers}/{parts_total}",
                     str(kd['group_lags'][g][t]['median']),
                     f"{stc}{state}[/]"
                     )
@@ -438,6 +455,7 @@ def lag_show_rich(params):
 
         table.add_column("Group", justify="left", style="cyan", no_wrap=True)
         table.add_column("Topic", style="cyan")
+        table.add_column("Partitions", style="cyan")
         table.add_column("Since\n(sec)", justify="right", style="green")
         table.add_column("Events\nConsumed", justify="right",  style="green")
         table.add_column("New topic\nevts/sec", justify="right", style="green")
@@ -472,6 +490,8 @@ def lag_show_rich(params):
                 t =  kd2['group_lags'][g][t]['topic']
 
                 table.add_row(g1,  t1,
+                    str(len(kd['group_lags'][g][t]['partlags'].keys())), 
+
                     f"{rates[g][t]['time_delta']:.2f}",
                     f"{humanize.metric(rates[g][t]['events_consumed'])}", 
                     f"{humanize.metric(rates[g][t]['events_arrival_rate'])}", 
@@ -539,6 +559,59 @@ def init_conf(args):
 def signal_handler(signal, frame):
     sys.exit(0)
 
+# --info
+def show_kafka_info(params):
+    info={
+        'topics':{},
+        'brokers':{},
+        'broker_name':'',
+        'cluster_id':'',
+    }
+
+    cinfo = list_topics(params)
+
+    for t in cinfo.topics:
+        tname=t
+        tparts=cinfo.topics[tname].partitions
+        pkeys = tparts.keys()
+
+        if args.kafka_info_parts:
+            partinfo=[]
+            for pk in pkeys:
+                partinfo.append({'id': tparts[pk].id, 'leader': tparts[pk].leader, 'replicas': tparts[pk].replicas, 'nisrs': len(tparts[pk].isrs)})
+        
+            info['topics'][tname] = {'name':tname, 'partitions':len(pkeys), 'partinfo':partinfo}
+        else:
+            info['topics'][tname] = {'name':tname, 'partitions':len(pkeys)}
+
+    for b in cinfo.brokers:
+        bid=b
+        bhost=cinfo.brokers[bid].host
+        bport=cinfo.brokers[bid].port
+        info['brokers'][bid]={'id':bid, 'host':bhost, 'port':bport}
+    info['broker_name']=cinfo.orig_broker_name
+    info['cluster_id']=cinfo.cluster_id
+    print(json.dumps(info,indent=2))
+
+
+
+    
+topic2nparts={}
+#populate and cahce topic2nparts
+def topic_nparts(params, tname):
+    global topic2nparts
+
+    # populate cache for all topics
+    if len(topic2nparts) == 0:
+        cinfo = list_topics(params)
+        for t in cinfo.topics:
+            tparts=cinfo.topics[t].partitions
+            nparts=len(tparts)
+            topic2nparts[t]=nparts
+    nparts = topic2nparts[tname]
+    return nparts
+
+
 
 if __name__ == '__main__':
 
@@ -551,6 +624,8 @@ if __name__ == '__main__':
     argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Include *only* the groups which match regex', required = False, default=None)
     argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
     argparser.add_argument('--summary', dest='kafka_summary', help='Display a groups, topics, partitions, and lags summary.', default=False, required = False, action='store_true')
+    argparser.add_argument('--info', dest='kafka_info', help='Only show informational data about the cluster, topics, groups, partitions, no stats (fast).', default=False, required = False, action='store_true')
+    argparser.add_argument('--info-parts', dest='kafka_info_parts', help='Same as --info but also show data about partitions, isr, leaders.', default=False, required = False, action='store_true')
     argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
     argparser.add_argument('--anonymize', dest='anonymize', help='Anonymize topics and groups.', default=False, required = False, action='store_true')
     argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
@@ -560,6 +635,10 @@ if __name__ == '__main__':
     params = init_conf(args)
     signal.signal(signal.SIGINT, signal_handler)
 
+
+    if args.kafka_info or args.kafka_info_parts:
+        show_kafka_info(params)
+        sys.exit(0)
 
     if args.kafka_status:
         lag_show_status(params)
