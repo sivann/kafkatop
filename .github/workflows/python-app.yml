@@ -29,6 +29,7 @@ jobs:
       run: |
         pwd
         which -a python3
+        ls -l /opt/hostedtoolcache/Python/
         make
         ls -la
     - name: Create Pex
