@@ -30,11 +30,16 @@ jobs:
         pwd
         which -a python3
         ls -l /opt/hostedtoolcache/Python/
+        export PATH=/opt/hostedtoolcache/Python/*/bin:$PATH
+        echo $PATH
+        which -a python3
         make
+        export KOKOKO=lala
+        echo "kokoko=$KOKOKO"
         ls -la
     - name: Create Pex
       run: |
-        ls -la
+        echo "kokoko=$KOKOKO"
         make pex
         ls -la
         python --version
