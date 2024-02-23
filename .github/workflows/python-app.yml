@@ -36,11 +36,17 @@ jobs:
         make
         export KOKOKO=lala
         echo "kokoko=$KOKOKO"
+        hostnamectl
+        touch koko
+        touch /tmp/koko
         ls -la
     - name: Create Pex
       run: |
         echo "kokoko=$KOKOKO"
+        hostnamectl
+        
         make pex
         ls -la
+        ls -la /tmp
         python --version
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
