@@ -27,7 +27,8 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Create virtualenv and install dependencies
       run: |
-        #python -m pip install --upgrade pip
+        pwd
+        which -a python3
         make
         ls -la
     - name: Create Pex
