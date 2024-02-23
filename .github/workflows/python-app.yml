@@ -33,6 +33,8 @@ jobs:
         for d in /opt/hostedtoolcache/Python/* ; do export PATH=$PATH:$d/bin ; done
         echo "PATH:"
         echo $PATH
+        ls -l /opt/hostedtoolcache/Python/*/bin
+        echo "which -a python3:"
         which -a python3
         pip install pex
         pex3 interpreter inspect --all --interpreter-constraint "CPython>=3.9" --verbose --indent 4 
