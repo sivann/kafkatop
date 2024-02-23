@@ -30,7 +30,8 @@ jobs:
         pwd
         which -a python3
         ls -l /opt/hostedtoolcache/Python/
-        export PATH=/opt/hostedtoolcache/Python/*/bin:$PATH
+        for d in /opt/hostedtoolcache/Python/* ; do export PATH=$PATH:$d ; done
+        echo "PATH:"
         echo $PATH
         which -a python3
         pip install pex
