@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         #python-version: ["3.9", "3.10", "3.11"]
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.11"]
 
     steps:
     - uses: actions/checkout@v3
@@ -39,19 +39,7 @@ jobs:
         pip install pex
         pex3 interpreter inspect --all --interpreter-constraint "CPython>=3.9" --verbose --indent 4 
         make
-        export KOKOKO=lala
-        echo "kokoko=$KOKOKO"
-        hostnamectl
-        touch koko
-        touch /tmp/koko
-        ls -la
+        ./pex-mp.sh
     - name: Create Pex
       run: |
-        echo "kokoko=$KOKOKO"
-        hostnamectl
-        
-        make pex
-        ls -la
-        ls -la /tmp
-        python --version
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        ls -l
