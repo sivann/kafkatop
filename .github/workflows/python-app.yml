@@ -30,7 +30,7 @@ jobs:
         pwd
         which -a python3
         ls -l /opt/hostedtoolcache/Python/
-        for d in /opt/hostedtoolcache/Python/* ; do export PATH=$PATH:$d ; done
+        for d in /opt/hostedtoolcache/Python/* ; do export PATH=$PATH:$d/bin ; done
         echo "PATH:"
         echo $PATH
         which -a python3
