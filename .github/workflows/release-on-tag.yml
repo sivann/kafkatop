@@ -26,7 +26,7 @@ jobs:
       run: |
         make
     - name: Create multiplatform PEX
-        run: |
+      run: |
         echo "Python versions in runner:"
         ls -l /opt/hostedtoolcache/Python/
         for d in /opt/hostedtoolcache/Python/* ; do export PATH=$PATH:$d/x64/bin ; done
