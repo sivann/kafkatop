@@ -21,6 +21,7 @@ jobs:
     - name: Install dependencies
         make
     - name: Create multiplatform PEX
+        echo "Python versions in runner:"
         ls -l /opt/hostedtoolcache/Python/
         for d in /opt/hostedtoolcache/Python/* ; do export PATH=$PATH:$d/x64/bin ; done
         echo "Python versions found:"
