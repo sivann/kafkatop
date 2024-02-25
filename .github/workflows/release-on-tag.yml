@@ -1,9 +1,12 @@
-# Doc: https://github.com/marketplace/actions/create-release
-name: Release-Pex-MP
+# uses https://github.com/marketplace/actions/create-release
+name: Release Multiplatform Pex
 
-on: 
+on:
   push:
     branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
     #tags:
     #- '*'
 
