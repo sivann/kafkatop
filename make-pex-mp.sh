@@ -46,12 +46,18 @@ do
 done
 
 
+pexfn="kafkatop-$(cat tag.txt)-$(uname -m).pex"
+rm -f "$pexfn"
 
 platforms_args=$(cat platforms.json | jq .platform |  sed -e 's/^/--platform /' | tr '\n' ' ')
 echo ""
 rm -f makepex.*
 echo '. venv/bin/activate' > makepex.$$
-echo 'pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang "#!/usr/bin/env python3" -f wh --resolve-local-platforms'  $platforms_args >> makepex.$$
+echo "pex . --disable-cache -o $pexfn -c kafkatop.py"' --python-shebang "#!/usr/bin/env python3" -f wh --resolve-local-platforms'  $platforms_args >> makepex.$$
 chmod +x  makepex.$$
 echo "*** Now running the following to create the multi-platform pex: ./makepex.$$"
+cat makepex.$$
 ./makepex.$$
+
+echo "Created $pexfn"
+ls -lh $pexfn
