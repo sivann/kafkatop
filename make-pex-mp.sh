@@ -19,10 +19,10 @@ pip install pex
 echo "Make sure all required python3's are in path"
 echo ""
 echo "*** Creating pex with for following platforms:"
-pex3 interpreter inspect --all --interpreter-constraint "CPython>=3.9" --verbose --indent 4 | jq -r  .platform
+pex3 interpreter inspect --interpreter-constraint "CPython>=3.9" --verbose --indent 4 | jq -r  .platform
 
 # Iterate over platforms:
-pex3 interpreter inspect --all --interpreter-constraint "CPython>=3.9" --verbose --indent 4 > platforms.json
+pex3 interpreter inspect --interpreter-constraint "CPython>=3.9" --verbose --indent 4 > platforms.json
 deactivate
 
 rm -fr venv-* wh-*
