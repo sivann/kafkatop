@@ -27,19 +27,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Create virtualenv and install dependencies
       run: |
-        pwd
-        which -a python3
-        ls -l /opt/hostedtoolcache/Python/
-        for d in /opt/hostedtoolcache/Python/* ; do export PATH=$PATH:$d/x64/bin ; done
-        echo "PATH:"
-        echo $PATH
-        ls -l /opt/hostedtoolcache/Python/*
-        echo "which -a python3:"
-        which -a python3
-        pip install pex
-        pex3 interpreter inspect --all --interpreter-constraint "CPython>=3.9" --verbose --indent 4 
         make
-        ./pex-mp.sh
     - name: Create Pex
       run: |
         ls -l
