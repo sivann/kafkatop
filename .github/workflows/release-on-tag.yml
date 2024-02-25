@@ -33,7 +33,9 @@ jobs:
         echo "Python versions found:"
         which -a python3
         pip install pex
-        pex3 interpreter inspect --all --interpreter-constraint "CPython>=3.9" --verbose --indent 4 
+        echo "Pex interpreter paths"
+        pex3 interpreter inspect --interpreter-constraint "CPython>=3.9" --verbose --indent 4 > pex3.output
+        cat pex3.output | jq ".path"
         #make
         #./pex-mp.sh
 #    - uses: ncipollo/release-action@v1
