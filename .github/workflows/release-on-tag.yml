@@ -1,20 +1,35 @@
 # Doc: https://github.com/marketplace/actions/create-release
-name: Releases
+name: Release-Pex-MP
 
 on: 
   push:
-    tags:
-    - '*'
+    branches: [ "master" ]
+    #tags:
+    #- '*'
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
     - uses: actions/checkout@v3
-    - uses: ncipollo/release-action@v1
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v3
       with:
-        artifacts: "release.tar.gz,foo/*.txt"
-        bodyFile: "body.md"
+        python-version: '3.11'
+    - name: Install dependencies
+        make
+    - name: Create multiplatform PEX
+        ls -l /opt/hostedtoolcache/Python/
+        for d in /opt/hostedtoolcache/Python/* ; do export PATH=$PATH:$d/x64/bin ; done
+        echo "Python versions found:"
+        which -a python3
+        pip install pex
+        pex3 interpreter inspect --all --interpreter-constraint "CPython>=3.9" --verbose --indent 4 
+        #make
+        #./pex-mp.sh
+#    - uses: ncipollo/release-action@v1
+#      with:
+#        artifacts: "release.tar.gz,foo/*.txt"
+#        bodyFile: "body.md"
