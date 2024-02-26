@@ -45,4 +45,5 @@ jobs:
         #replacesArtifacts: true
         #allowUpdates: true
         #generateReleaseNotes: true
-        #name: "test-release" #"if missing, tag (or git ref) will be used"
+        name: "test-release" #"if missing, tag (or git ref) will be used"
+        tag: "test1"

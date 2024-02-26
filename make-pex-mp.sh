@@ -35,7 +35,9 @@ do
     cpversion=$(echo "$x" | jq -r .version)
     platform=$(echo "$x" | jq -r .platform)
     echo ""
+    echo "*******************************"
     echo "*** Gathering platform requirements for python: $cpversion, platform: $platform, interpreter: $cppath"
+    echo "*******************************"
     
     $cppath -m venv venv-${cpversion}
     . venv-${cpversion}/bin/activate
