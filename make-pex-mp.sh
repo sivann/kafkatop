@@ -47,6 +47,7 @@ done
 
 
 pexfn="kafkatop-$(cat tag.txt)-$(uname -m).pex"
+#pexfn="kafkatop-$(uname -m).pex"
 rm -f "$pexfn"
 
 platforms_args=$(cat platforms.json | jq .platform |  sed -e 's/^/--platform /' | tr '\n' ' ')
@@ -60,4 +61,6 @@ cat makepex.$$
 ./makepex.$$
 
 echo "Created $pexfn"
+ln -sf "$pexfn" kafkatop
+tar zcf kafkatop-release.tar.gz kafkatop
 ls -lh $pexfn
