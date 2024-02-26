@@ -37,8 +37,12 @@ jobs:
         pex3 interpreter inspect --interpreter-constraint "CPython>=3.9" --verbose --indent 4 > pex3.output
         cat pex3.output | jq ".path"
         make pex-mp
-        ls -lrth | grep kafkatop
-#    - uses: ncipollo/release-action@v1
-#      with:
-#        artifacts: "release.tar.gz,foo/*.txt"
-#        bodyFile: "body.md"
+    - uses: ncipollo/release-action@v1
+      with:
+        artifacts: "kafkatop-release.tar.gz" # "release.tar.gz,foo/*.txt"
+        bodyFile: "releasebody.md"
+        #removeArtifacts: true
+        #replacesArtifacts: true
+        #allowUpdates: true
+        #generateReleaseNotes: true
+        #name: "test-release" #"if missing, tag (or git ref) will be used"
