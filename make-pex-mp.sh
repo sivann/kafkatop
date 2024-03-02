@@ -72,12 +72,11 @@ cat makepex.$$
 # Now kafkatop has been created, create release and release notes for GitHub (releasebody.md)
 arch=$(uname -m)
 echo "Created $pexfn"
-ln -sf "$pexfn" kafkatop
+cp -f "$pexfn" kafkatop
 tar zcf kafkatop-release.tar.gz kafkatop
 ls -lh $pexfn
-echo -e "Kafkatop version $(cat tag.txt), compatible with the following $arch platforms:\n" > releasebody.md
-cat pexinspect.json |jq -r .platform | sed 's/^/\- /' >> releasebody.md
+echo -e "Kafkatop version $(cat tag.txt)\n" > releasebody.md
 echo -e "\n\n" >> releasebody.md
-echo -e "\n\nThis is a multi-platform binary release (pex), that can run in any x86_64 CPU.\n\n**How to run**: download the zip file, extract kafkatop and run it. \n\n**Requires** one of the following Python versions in your path:\n" >> releasebody.md
-cat pexinspect.json |jq -r  .version | cut -d. -f1,2 | sort -uV | sed 's/^/\- /' >> releasebody.md
+echo -e "\n\nThis is a multi-platform binary release (pex), that can run in any **x86_64** linux distribution.\n\n**How to run**: download the zip file, extract kafkatop and run it. \n\n**Requires** one of the following Python versions in your path:\n" >> releasebody.md
+cat pexinspect.json | jq -r  .version | cut -d. -f1,2 | sort -uV | sed 's/^/\- /' >> releasebody.md
 
