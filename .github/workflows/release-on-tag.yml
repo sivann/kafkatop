@@ -42,8 +42,8 @@ jobs:
         artifacts: "kafkatop-release.tar.gz" # "release.tar.gz,foo/*.txt"
         bodyFile: "releasebody.md"
         #removeArtifacts: true
-        #replacesArtifacts: true
-        #allowUpdates: true
+        replacesArtifacts: true
+        allowUpdates: true
         #generateReleaseNotes: true
-        name: "test-release" #"if missing, tag (or git ref) will be used"
-        tag: "test1"
+        name: "test-release, latest commit" #"if missing, tag (or git ref) will be used"
+        tag: "latest"
