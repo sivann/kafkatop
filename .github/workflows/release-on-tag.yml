@@ -4,11 +4,9 @@ name: Release Multiplatform Pex
 
 on:
   push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-    #tags:
-    #- '*'
+    #branches: [ "master" ]
+    tags:
+    - '*'
 
 jobs:
   build:
@@ -46,3 +44,4 @@ jobs:
         #generateReleaseNotes: true
         name: "test-release, latest commit" #"if missing, tag (or git ref) will be used"
         tag: "latest"
+
