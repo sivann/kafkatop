@@ -45,6 +45,7 @@ do
     pip install pex
     pip wheel -r requirements.txt --wheel-dir wh # -${cpversion} # can be shared among verions
     deactivate
+    echo $platform >> platforms.tmp
 done
 
 
@@ -62,7 +63,11 @@ echo "*** Now running the following to create the multi-platform pex: ./makepex.
 cat makepex.$$
 ./makepex.$$
 
+arch=$(uname -m)
 echo "Created $pexfn"
 ln -sf "$pexfn" kafkatop
 tar zcf kafkatop-release.tar.gz kafkatop
 ls -lh $pexfn
+echo "kafkatop version $(cat tag.txt) compatible with the following $arch platforms:" > releasebody.md
+echo "" >> releasebody.md
+cat platforms.json |jq .platform >> releasebody.md
