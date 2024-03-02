@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# sivann 2023
 # Helps create multiplatform-pex
 
 PYTHON_MINVER="3.9"
@@ -15,6 +16,7 @@ if [[ -z "$VIRTUAL_ENV" ]] ; then
     exit 1
 fi
 
+# Create a venv from the 1st python in the path to get started with pex and detect platforms
 python3 -m pip install --upgrade pip
 pip install pex
 
@@ -27,6 +29,7 @@ cat pexinspect.json | jq -r  .platform
 # Iterate over platforms:
 deactivate
 
+# Iterate over python platforms and fetch dependencies in a wheel format under wh/ for each platform
 rm -fr venv-* wh-*
 mkdir wh
 echo ""
@@ -51,6 +54,7 @@ do
 done
 
 
+# Now create the multiplatform binary pex using the downloaded wheel files (under wh/)
 pexfn="kafkatop-$(cat tag.txt)-$(uname -m).pex"
 #pexfn="kafkatop-$(uname -m).pex"
 rm -f "$pexfn"
@@ -65,6 +69,7 @@ echo "*** Now running the following to create the multi-platform pex: ./makepex.
 cat makepex.$$
 ./makepex.$$
 
+# Now kafkatop has been created, create release and release notes for GitHub (releasebody.md)
 arch=$(uname -m)
 echo "Created $pexfn"
 ln -sf "$pexfn" kafkatop
