@@ -3,3 +3,5 @@ venv
 __pycache__
 *.pex
 kafka-lagstats
+kafkatop
+pexinspect.json

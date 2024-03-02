@@ -2,6 +2,8 @@
 
 # Helps create multiplatform-pex
 
+PYTHON_MINVER="3.9"
+
 sed -i "s/^VERSION=.*/VERSION=$(cat tag.txt)/" kafkatop.py
 
 echo "Gathering python platform info"
@@ -19,17 +21,17 @@ pip install pex
 echo "Make sure all required python3's are in path"
 echo ""
 echo "*** Creating pex with for following platforms:"
-pex3 interpreter inspect --interpreter-constraint "CPython>=3.9" --verbose --indent 4 | jq -r  .platform
+pex3 interpreter inspect --interpreter-constraint "CPython>=${PYTHON_MINVER}" --verbose --indent 4  > pexinspect.json
+cat pexinspect.json | jq -r  .platform
 
 # Iterate over platforms:
-pex3 interpreter inspect --interpreter-constraint "CPython>=3.9" --verbose --indent 4 > platforms.json
 deactivate
 
 rm -fr venv-* wh-*
 mkdir wh
 echo ""
 echo "*** Gathering platform requirements."
-cat platforms.json | jq -c '.' |while read x; 
+cat pexinspect.json | jq -c '.' |while read x; 
 do
     cppath=$(echo "$x" | jq -r .path) 
     cpversion=$(echo "$x" | jq -r .version)
@@ -53,7 +55,7 @@ pexfn="kafkatop-$(cat tag.txt)-$(uname -m).pex"
 #pexfn="kafkatop-$(uname -m).pex"
 rm -f "$pexfn"
 
-platforms_args=$(cat platforms.json | jq .platform |  sed -e 's/^/--platform /' | tr '\n' ' ')
+platforms_args=$(cat pexinspect.json | jq .platform |  sed -e 's/^/--platform /' | tr '\n' ' ')
 echo ""
 rm -f makepex.*
 echo '. venv/bin/activate' > makepex.$$
@@ -68,6 +70,10 @@ echo "Created $pexfn"
 ln -sf "$pexfn" kafkatop
 tar zcf kafkatop-release.tar.gz kafkatop
 ls -lh $pexfn
-echo "kafkatop version $(cat tag.txt) compatible with the following $arch platforms:" > releasebody.md
-echo "" >> releasebody.md
-cat platforms.json |jq .platform >> releasebody.md
+echo "This is kafkatop version $(cat tag.txt), compatible with the following $arch platforms:" > releasebody.md
+cat pexinspect.json |jq -r .platform | sed 's/^/\* /' >> releasebody.md
+echo -e "\n\n" >> releasebody.md
+echo 
+echo -e "This is a multi-platform binary release (pex), that can run in any x86_64 CPU.\n\nHow to run: download the zip file, extract kafkatop and run it. Requires one of the follpowing Python versions in your path:"
+cat pexinspect.json |jq -r  .version|sort -u | sed 's/^/\* /' >> releasebody.md
+
