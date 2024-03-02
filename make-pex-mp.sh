@@ -4,9 +4,11 @@
 # Helps create multiplatform-pex
 
 PYTHON_MINVER="3.9"
-commit=$(git rev-parse --short HEAD)
+commit_hash=$(git rev-parse --short HEAD)
+git_desc=$(git describe)
 
-sed -i "s/^VERSION=.*/VERSION=$(cat tag.txt)/" kafkatop.py
+#sed -i "s/^VERSION=.*/VERSION=$(cat tag.txt)/" kafkatop.py
+sed -i "s/^VERSION=.*/VERSION=${git_desc}/" kafkatop.py
 
 echo "Gathering python platform info"
 rm -fr venv
@@ -56,7 +58,7 @@ done
 
 
 # Now create the multiplatform binary pex using the downloaded wheel files (under wh/)
-pexfn="kafkatop-$(cat tag.txt)-$(uname -m).pex"
+pexfn="kafkatop-${git_desc}-$(uname -m).pex"
 #pexfn="kafkatop-$(uname -m).pex"
 rm -f "$pexfn"
 
@@ -76,8 +78,9 @@ echo "Created $pexfn"
 cp -f "$pexfn" kafkatop
 tar zcf kafkatop-release.tar.gz kafkatop
 ls -lh $pexfn
-echo -e "Kafkatop version $(cat tag.txt)\n" > releasebody.md
+echo -e "Kafkatop version ${git_desc}\n" > releasebody.md
 echo -e "\n\n" >> releasebody.md
 echo -e "\n\nThis is a multi-platform binary release (pex), that can run in any **x86_64** linux distribution with a compatible Python\n\n**How to run**: download the zip file, extract kafkatop and run it. \n\n**Requires** one of the following Python versions in your path:\n" >> releasebody.md
+
 cat pexinspect.json | jq -r  .version | cut -d. -f1,2 | sort -uV | sed 's/^/\- /' >> releasebody.md
 
