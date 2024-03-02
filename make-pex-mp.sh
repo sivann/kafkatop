@@ -78,6 +78,6 @@ ls -lh $pexfn
 echo "Kafkatop version $(cat tag.txt), compatible with the following $arch platforms:\n" > releasebody.md
 cat pexinspect.json |jq -r .platform | sed 's/^/\- /' >> releasebody.md
 echo -e "\n\n" >> releasebody.md
-echo -e "\n\nThis is a multi-platform binary release (pex), that can run in any x86_64 CPU.\n\nHow to run: download the zip file, extract kafkatop and run it. Requires one of the follpowing Python versions in your path:\n" >> releasebody.md
-cat pexinspect.json |jq -r  .version | cut -d. -f1,2 | sort -u | sed 's/^/\- /' >> releasebody.md
+echo -e "\n\nThis is a multi-platform binary release (pex), that can run in any x86_64 CPU.\n\n**How to run**: download the zip file, extract kafkatop and run it. \n\n**Requires* one of the following Python versions in your path:\n" >> releasebody.md
+cat pexinspect.json |jq -r  .version | cut -d. -f1,2 | sort -uV | sed 's/^/\- /' >> releasebody.md
 
