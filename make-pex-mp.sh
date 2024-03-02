@@ -4,6 +4,7 @@
 # Helps create multiplatform-pex
 
 PYTHON_MINVER="3.9"
+commit=$(git rev-parse --short HEAD)
 
 sed -i "s/^VERSION=.*/VERSION=$(cat tag.txt)/" kafkatop.py
 
