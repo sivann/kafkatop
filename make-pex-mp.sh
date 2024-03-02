@@ -78,6 +78,6 @@ tar zcf kafkatop-release.tar.gz kafkatop
 ls -lh $pexfn
 echo -e "Kafkatop version $(cat tag.txt)\n" > releasebody.md
 echo -e "\n\n" >> releasebody.md
-echo -e "\n\nThis is a multi-platform binary release (pex), that can run in any **x86_64** linux distribution.\n\n**How to run**: download the zip file, extract kafkatop and run it. \n\n**Requires** one of the following Python versions in your path:\n" >> releasebody.md
+echo -e "\n\nThis is a multi-platform binary release (pex), that can run in any **x86_64** linux distribution with a compatible Python\n\n**How to run**: download the zip file, extract kafkatop and run it. \n\n**Requires** one of the following Python versions in your path:\n" >> releasebody.md
 cat pexinspect.json | jq -r  .version | cut -d. -f1,2 | sort -uV | sed 's/^/\- /' >> releasebody.md
 
