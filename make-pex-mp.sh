@@ -6,11 +6,14 @@
 PYTHON_MINVER="3.9"
 commit_hash=$(git rev-parse --short HEAD)
 git_desc=$(git describe)
+echo "Starting $0 on $(pwd), git tag: $git_desc"
 
 #sed -i "s/^VERSION=.*/VERSION=$(cat tag.txt)/" kafkatop.py
 sed -i "s/^VERSION=.*/VERSION=${git_desc}/" kafkatop.py
 
-echo "Gathering python platform info"
+echo "Gathering python platform info using python:"
+python3 --version
+
 rm -fr venv
 python3 -m venv venv
 . venv/bin/activate
