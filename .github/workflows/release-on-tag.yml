@@ -33,7 +33,8 @@ jobs:
         echo "Pex interpreter paths"
         pex3 interpreter inspect --interpreter-constraint "CPython>=3.9" --verbose --indent 4 > pex3.output
         cat pex3.output | jq ".path"
-        make pex-mp
+        ./make-pex-mp.sh # remove this
+        #make pex-mp
     - uses: ncipollo/release-action@v1
       with:
         artifacts: "kafkatop-release.tar.gz" # "release.tar.gz,foo/*.txt"
