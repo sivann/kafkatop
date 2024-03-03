@@ -15,7 +15,7 @@ commit_hash=$(git rev-parse --short HEAD)
 git_desc=$(git describe --tags)
 echo "Starting $0 on $(pwd), git tag: $git_desc"
 
-sed -i "s/^VERSION=.*/VERSION=v${git_desc}/" kafkatop.py
+sed -i "s/^VERSION=.*/VERSION='${git_desc}'/" kafkatop.py
 
 echo "Gathering python platform info using python:"
 python3 --version
