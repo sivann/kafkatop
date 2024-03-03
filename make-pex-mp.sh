@@ -81,6 +81,11 @@ echo "*** Now running the following to create the multi-platform pex: ./makepex.
 cat makepex.$$
 ./makepex.$$
 
+if [[ ! -f "$pexfn" ]] ; then
+    ls -lrt
+    echo "$pexfn not found, exiting"
+    exit 1
+fi
 # Now kafkatop has been created, create release and release notes for GitHub (releasebody.md)
 arch=$(uname -m)
 echo "Created $pexfn"
