@@ -92,7 +92,7 @@ echo "Created $pexfn"
 cp -f "$pexfn" kafkatop
 tar zcf kafkatop-release.tar.gz kafkatop
 cp -a kafkatop-release.tar.gz kafkatop-release-${git_desc}.tar.gz
-ls -lh $pexfn
+ls -lrth #$pexfn
 echo -e "Kafkatop version ${git_desc}\n" > releasebody.md
 echo -e "\n\n" >> releasebody.md
 echo -e "\n\nThis is a multi-platform binary release (pex), that can run in any **x86_64** linux distribution with a compatible Python version.\n\n**How to run**: download the zip file, extract kafkatop and run it. \n\n**Requires** one of the following Python versions in your path:\n" >> releasebody.md
