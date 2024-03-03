@@ -3,6 +3,10 @@
 # sivann 2023
 # Helps create multiplatform-pex
 
+sudo apt-get -y install tmate
+tmate
+exit
+
 PYTHON_MINVER="3.9"
 commit_hash=$(git rev-parse --short HEAD)
 git_desc=$(git describe)
