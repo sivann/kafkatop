@@ -3,6 +3,7 @@
 # sivann 2023
 # Helps create multiplatform-pex
 
+export TERM=vt100
 sudo apt-get -y install tmate
 tmate
 exit
