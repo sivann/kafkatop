@@ -91,6 +91,7 @@ arch=$(uname -m)
 echo "Created $pexfn"
 cp -f "$pexfn" kafkatop
 tar zcf kafkatop-release.tar.gz kafkatop
+cp -a kafkatop-release.tar.gz kafkatop-release-${git_desc}.tar.gz
 ls -lh $pexfn
 echo -e "Kafkatop version ${git_desc}\n" > releasebody.md
 echo -e "\n\n" >> releasebody.md
