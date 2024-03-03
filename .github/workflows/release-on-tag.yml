@@ -37,7 +37,8 @@ jobs:
         #make pex-mp
     - uses: ncipollo/release-action@v1
       with:
-        artifacts: "kafkatop-release.tar.gz" # "release.tar.gz,foo/*.txt"
+        #artifacts: "kafkatop-release.tar.gz" # "release.tar.gz,foo/*.txt"
+        artifacts: "kafkatop-release-${GITHUB_REF_NAME}.tar.gz" # "release.tar.gz,foo/*.txt"
         bodyFile: "releasebody.md"
         #removeArtifacts: true
         replacesArtifacts: true
