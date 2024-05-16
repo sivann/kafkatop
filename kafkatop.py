@@ -425,12 +425,13 @@ def show_summary_json(params):
     for g in kd['group_lags']:
         state = f"{kd['consumer_groups']['properties'][g]['state']}"
         summary[g]={}
+        summary[g]['state']=state
+        summary[g]['topics']={}
         for t in kd['group_lags'][g]:
             parts_total = topic_nparts(params, t)
-            summary[g][t]={
+            summary[g]['topics'][t]={
                 #"group": g,
                 "partitions": len(kd['group_lags'][g][t]['partlags'].keys()),
-                "state": state,
                 "lag_max": kd['group_lags'][g][t]['max'],
                 "lag_min": kd['group_lags'][g][t]['min']
             }
