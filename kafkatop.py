@@ -318,10 +318,13 @@ def lag_show_text(params):
     a = params['a']
     kd = calc_lag(a, params)
     for g in kd['group_lags']:
+        state = kd['consumer_groups']['properties'][g]['state']
         for t in kd['group_lags'][g]:
             parts_total = topic_nparts(params, t)
-            print(f"Group: {g:<45}, topic: {t:20}, partitions:{len(kd['group_lags'][g][t]['partlags'].keys()):5}/{parts_total:5}, LAG min: {kd['group_lags'][g][t]['min']:10.1f}, max: {kd['group_lags'][g][t]['max']:10.1f}, median: {kd['group_lags'][g][t]['median']}")
+            print(f"Group: {g:<45}, topic: {t:20}, partitions:{len(kd['group_lags'][g][t]['partlags'].keys()):5}/{parts_total:5}, State: {state:30}, LAG min: {kd['group_lags'][g][t]['min']:10.1f}, max: {kd['group_lags'][g][t]['max']:10.1f}, median: {kd['group_lags'][g][t]['median']}")
  
+    if params['kafka_poll_iterations'] == 0:
+        sys.exit(0)
     time.sleep(params['kafka_poll_period'])
     kd1 = kd
     iteration=0
@@ -341,9 +344,9 @@ def lag_show_text(params):
                 f"{rates[g][t]['events_consumption_rate']:10.1f} cons evts/sec,"
                 f"{rates[g][t]['events_arrival_rate']:10.1f} new evts/sec,"
                 f" remaining: {rates[g][t]['rem_hms']:8}")
-        time.sleep(params['kafka_poll_period'])
-        if iteration==params['kafka_poll_iterations']:
+        if iteration==params['kafka_poll_iterations'] and params['kafka_poll_iterations']>0:
             sys.exit(0)
+        time.sleep(params['kafka_poll_period'])
  
  
 # Evaluate health of consumption stats per topic
@@ -401,11 +404,12 @@ def lag_show_status(params):
     time.sleep(params['kafka_poll_period'])
     kd2 = calc_lag(a, params)
     rates = calc_rate(kd1, kd2) 
+    #print(json.dumps(rates,indent=2))
 
     gst={}
     for g in rates:
         for t in rates[g]:
-            if 'events_consumed' not in rates[g]:
+            if 'events_consumed' not in rates[g][t]:
                 continue
             lag = kd2['group_lags'][g][t]['sum']
             st, s = lag_health(g, lag, rates[g][t])
@@ -445,6 +449,8 @@ def lag_show_rich(params):
         console.print(table1)
         print("")
 
+    if params['kafka_poll_iterations'] == 0:
+        sys.exit(0)
 
     def generate_table(iiteration, kd, rates) -> Table:
         dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -525,7 +531,7 @@ def lag_show_rich(params):
             time.sleep(params['kafka_poll_period'])
             live.update(generate_table(iteration, kd2, rates))
 
-            if iteration == params['kafka_poll_iterations']:
+            if iteration==params['kafka_poll_iterations'] and params['kafka_poll_iterations']>0:
                 sys.exit(0)
 
 
@@ -560,7 +566,7 @@ def signal_handler(signal, frame):
     sys.exit(0)
 
 # --info
-def show_kafka_info(params):
+def show_kafka_topicinfo(params):
     info={
         'topics':{},
         'brokers':{},
@@ -575,7 +581,7 @@ def show_kafka_info(params):
         tparts=cinfo.topics[tname].partitions
         pkeys = tparts.keys()
 
-        if args.kafka_info_parts:
+        if args.kafka_topicinfo_parts:
             partinfo=[]
             for pk in pkeys:
                 partinfo.append({'id': tparts[pk].id, 'leader': tparts[pk].leader, 'replicas': tparts[pk].replicas, 'nisrs': len(tparts[pk].isrs)})
@@ -619,13 +625,13 @@ if __name__ == '__main__':
     argparser.add_argument('--kafka-broker', dest='kafka_broker', help='Broker IP', required = False, default='localhost' )
     argparser.add_argument('--text', dest='text', help='Only plain text, no rich output.', required = False, default=False, action='store_true' )
     argparser.add_argument('--poll-period', dest='kafka_poll_period', help='Kafka offset poll period (seconds) for evts/sec calculation', required = False, default=5)
-    argparser.add_argument('--poll-iterations', dest='kafka_poll_iterations', help='How many times to query and display stats. 0 = Inf', required = False, default=15)
+    argparser.add_argument('--poll-iterations', dest='kafka_poll_iterations', help='How many times to query and display stats. -1 = Inf', required = False, default=15)
     argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='If group matches regex, exclude ', required = False, default=None )# default='_[0-9]+$')
     argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Include *only* the groups which match regex', required = False, default=None)
     argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
     argparser.add_argument('--summary', dest='kafka_summary', help='Display a groups, topics, partitions, and lags summary.', default=False, required = False, action='store_true')
-    argparser.add_argument('--info', dest='kafka_info', help='Only show informational data about the cluster, topics, groups, partitions, no stats (fast).', default=False, required = False, action='store_true')
-    argparser.add_argument('--info-parts', dest='kafka_info_parts', help='Same as --info but also show data about partitions, isr, leaders.', default=False, required = False, action='store_true')
+    argparser.add_argument('--topicinfo', dest='kafka_topicinfo', help='Only show informational data about the cluster, topics, partitions, no stats (fast).', default=False, required = False, action='store_true')
+    argparser.add_argument('--topicinfo-parts', dest='kafka_topicinfo_parts', help='Same as --info but also show data about partitions, isr, leaders.', default=False, required = False, action='store_true')
     argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
     argparser.add_argument('--anonymize', dest='anonymize', help='Anonymize topics and groups.', default=False, required = False, action='store_true')
     argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
@@ -636,8 +642,8 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
 
 
-    if args.kafka_info or args.kafka_info_parts:
-        show_kafka_info(params)
+    if args.kafka_topicinfo or args.kafka_topicinfo_parts:
+        show_kafka_topicinfo(params)
         sys.exit(0)
 
     if args.kafka_status:
