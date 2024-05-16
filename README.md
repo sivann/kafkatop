@@ -20,10 +20,9 @@ Supports:
 
 # Usage
 ```
-usage: kafkatop.py [-h] [--kafka-broker KAFKA_BROKER] [--text] [--poll-period KAFKA_POLL_PERIOD]
-                   [--poll-iterations KAFKA_POLL_ITERATIONS] [--group-exclude-pattern KAFKA_GROUP_EXCLUDE_PATTERN]
-                   [--group-filter-pattern KAFKA_GROUP_FILTER_PATTERN] [--status] [--summary] [--info] [--info-parts]
-                   [--only-issues] [--anonymize] [--all] [--version]
+usage: kafkatop.py [-h] [--kafka-broker KAFKA_BROKER] [--text] [--poll-period KAFKA_POLL_PERIOD] [--poll-iterations KAFKA_POLL_ITERATIONS] [--group-exclude-pattern KAFKA_GROUP_EXCLUDE_PATTERN]
+                   [--group-filter-pattern KAFKA_GROUP_FILTER_PATTERN] [--status] [--summary] [--summary-json] [--topicinfo] [--topicinfo-parts] [--only-issues] [--anonymize] [--all]
+                   [--version]
 
 Kafka consumer statistics
 
@@ -35,21 +34,20 @@ options:
   --poll-period KAFKA_POLL_PERIOD
                         Kafka offset poll period (seconds) for evts/sec calculation (default: 5)
   --poll-iterations KAFKA_POLL_ITERATIONS
-                        How many times to query and display stats. 0 = Inf (default: 15)
+                        How many times to query and display stats. -1 = Inf (default: 15)
   --group-exclude-pattern KAFKA_GROUP_EXCLUDE_PATTERN
                         If group matches regex, exclude (default: None)
   --group-filter-pattern KAFKA_GROUP_FILTER_PATTERN
                         Include *only* the groups which match regex (default: None)
   --status              Report health status in json and exit. (default: False)
-  --summary             Display a groups, topics, partitions, and lags summary. (default: False)
-  --info                Only show informational data about the cluster, topics, groups, partitions, no stats (fast).
-                        (default: False)
-  --info-parts          Same as --info but also show data about partitions, isr, leaders. (default: False)
+  --summary             Display consumer groups, states, topics, partitions, and lags summary. (default: False)
+  --summary-json        Display consumer groups, states, topics, partitions, and lags summary, in json. (default: False)
+  --topicinfo           Only show informational data about the cluster, topics, partitions, no stats (fast). (default: False)
+  --topicinfo-parts     Same as --info but also show data about partitions, isr, leaders. (default: False)
   --only-issues         Only show rows with issues. (default: False)
   --anonymize           Anonymize topics and groups. (default: False)
   --all                 Show groups with no members. (default: False)
   --version             show program's version number and exit
-
 ```
 
 # Screenshot

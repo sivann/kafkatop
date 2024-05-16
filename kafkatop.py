@@ -418,6 +418,25 @@ def lag_show_status(params):
 
 
 
+def show_summary_json(params):
+    a = params['a']
+    kd = calc_lag(a, params)
+    summary={}
+    for g in kd['group_lags']:
+        state = f"{kd['consumer_groups']['properties'][g]['state']}"
+        summary[g]={}
+        for t in kd['group_lags'][g]:
+            parts_total = topic_nparts(params, t)
+            summary[t]={
+                "group": g,
+                "partitions": len(kd['group_lags'][g][t]['partlags'].keys()),
+                "state": state,
+                "lag_max": kd['group_lags'][g][t]['max'],
+                "lag_min": kd['group_lags'][g][t]['min']
+            }
+    print(json.dumps(summary,indent=2))
+ 
+
 def lag_show_rich(params):
     a = params['a']
     kd = calc_lag(a, params)
@@ -556,6 +575,7 @@ def init_conf(args):
     params['kafka_poll_period'] = int(args.kafka_poll_period)
     params['kafka_poll_iterations'] = int(args.kafka_poll_iterations)
     params['kafka_summary'] = int(args.kafka_summary)
+    params['kafka_summary_json'] = int(args.kafka_summary_json)
     params['kafka_show_empty_groups'] = int(args.kafka_show_empty_groups)
     params['kafka_only_issues'] = int(args.kafka_only_issues)
 
@@ -629,7 +649,8 @@ if __name__ == '__main__':
     argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='If group matches regex, exclude ', required = False, default=None )# default='_[0-9]+$')
     argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Include *only* the groups which match regex', required = False, default=None)
     argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
-    argparser.add_argument('--summary', dest='kafka_summary', help='Display a groups, topics, partitions, and lags summary.', default=False, required = False, action='store_true')
+    argparser.add_argument('--summary', dest='kafka_summary', help='Display consumer groups, states, topics, partitions, and lags summary.', default=False, required = False, action='store_true')
+    argparser.add_argument('--summary-json', dest='kafka_summary_json', help='Display consumer groups, states, topics, partitions, and lags summary, in json.', default=False, required = False, action='store_true')
     argparser.add_argument('--topicinfo', dest='kafka_topicinfo', help='Only show informational data about the cluster, topics, partitions, no stats (fast).', default=False, required = False, action='store_true')
     argparser.add_argument('--topicinfo-parts', dest='kafka_topicinfo_parts', help='Same as --info but also show data about partitions, isr, leaders.', default=False, required = False, action='store_true')
     argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
@@ -650,7 +671,9 @@ if __name__ == '__main__':
         lag_show_status(params)
         sys.exit(0)
 
-    if args.text:
+    if args.kafka_summary_json:
+        show_summary_json(params)
+    elif args.text:
         lag_show_text(params)
     else:
         lag_show_rich(params)
