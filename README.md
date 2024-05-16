@@ -50,7 +50,9 @@ options:
   --version             show program's version number and exit
 ```
 
-# Screenshot
+
+# Examples
+## Screenshots
 
 | ![Scresnshot](images/kafkatop2.png) |
 |:--:|
@@ -64,6 +66,28 @@ options:
 |:--:| 
 | *A summary of (anonymized) groups, topics, partitions, lag and consumer group states. Lag is the median lag of all topic partitions.* |
 
+
+## Text output
+
+```
+kafkatop --kafka-broker 1.2.3.4  --group-filter-pattern 'GroupName1' --summary-json
+```
+
+results in:
+
+```
+{
+  "ConsumerGroupName1": {
+    "TopicName": {
+      "partitions": 1672,
+      "state": "ConsumerGroupState.STABLE",
+      "lag_max": 86169242,
+      "lag_min": 0
+    }
+  },
+[...]
+}
+```
 
 # Installing
 You may download the multi-platform pex file from [releases](https://github.com/sivann/kafkatop/releases). It is a one-file executable, compatible with x86_64 and just needs python 3.9, 3.10 or 3.11 in your path.

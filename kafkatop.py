@@ -427,8 +427,8 @@ def show_summary_json(params):
         summary[g]={}
         for t in kd['group_lags'][g]:
             parts_total = topic_nparts(params, t)
-            summary[t]={
-                "group": g,
+            summary[g][t]={
+                #"group": g,
                 "partitions": len(kd['group_lags'][g][t]['partlags'].keys()),
                 "state": state,
                 "lag_max": kd['group_lags'][g][t]['max'],
