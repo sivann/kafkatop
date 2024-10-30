@@ -34,7 +34,7 @@ from rich.table import Table
 from rich.live import Live
 from rich import box
 
-VERSION='1.11'
+VERSION='1.12'
 
 
 # a: kafka AdminClient instance
