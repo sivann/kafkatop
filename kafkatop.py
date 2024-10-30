@@ -201,6 +201,7 @@ def calc_lag(a, params):
     #   ],
     #   "partitions": [0,1,..]
     kd['topics_with_groups']={}
+    pprint.pprint(kd)
     for group in kd['group_offsets']:
         if len(kd['group_offsets'][group].keys()):
             #topic = list(kd['group_offsets'][group].keys())[0] #1st topic
@@ -213,7 +214,7 @@ def calc_lag(a, params):
                 kd['topics_with_groups'][topic]['groups'].append(group)
             
         else:
-            #print('ERROR: no topics for group',group) # can happen if never had data
+            print('ERROR: no offsets for group (never committed data)',group) # can happen if never had data
             continue
 
 
