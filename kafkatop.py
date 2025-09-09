@@ -118,7 +118,7 @@ def show_final_state(iteration, kd, rates, console, generate_table_func, wait_fo
     final_table = generate_table_func(iteration, kd, rates)
     
     # Print final state
-    console.print("\n[bold cyan]Final State - Exiting[/bold cyan]\n")
+    console.print("\n[bold cyan]Displaying final state - exiting[/bold cyan]\n")
     console.print(final_table)
     
     if wait_for_input:
@@ -618,7 +618,7 @@ def lag_show_rich(params):
         dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Add keyboard shortcuts to caption
-        caption = "Legend: [cyan]INFO[/] [green]OK[/] [yellow]WARN[/] [magenta]ERR[/] [red]CRIT[/] | Keys: [green]q[/green]uit, Sorting: [green]G[/green]roup, [green]T[/green]opic, [green]P[/green]artitions, [green]E[/green]TA, [green]L[/green]ag, [green]C[/green]onsumed"
+        caption = "Legend: [cyan]INFO[/] [green]OK[/] [yellow]WARN[/] [magenta]ERR[/] [red]CRIT[/] | Keys: [green]Q[/green]uit, Sort By: [green]G[/green]roup, [green]T[/green]opic, [green]P[/green]artitions, [green]E[/green]TA, [green]L[/green]ag, [green]C[/green]onsumed"
         if sort_key:
             caption += f" | Sorted by: [bold]{sort_key}[/] (highlighted column)"
             
@@ -959,7 +959,7 @@ if __name__ == '__main__':
     argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Filter groups by regex', required = False, default=None)
     argparser.add_argument('--status', dest='kafka_status', help='Report health as JSON and exit.', required = False, action='store_true')
     argparser.add_argument('--summary', dest='kafka_summary', help='Display consumer groups, states, topics, partitions, and lags summary.', default=False, required = False, action='store_true')
-    argparser.add_argument('--summary-json', dest='kafka_summary_json', help='Display consumer groups, states, topics, partitions, and lags summary, in JSON.', default=False, required = False, action='store_true')
+    argparser.add_argument('--summary-json', dest='kafka_summary_json', help='Display consumer groups, states, topics, partitions, and lags summary, in JSON and exit.', default=False, required = False, action='store_true')
     argparser.add_argument('--topicinfo', dest='kafka_topicinfo', help='Show topic metadata only (fast).', default=False, required = False, action='store_true')
     argparser.add_argument('--topicinfo-parts', dest='kafka_topicinfo_parts', help='Show topic and partition metadata', default=False, required = False, action='store_true')
     argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Show only groups with high lag/issues.', default=False, required = False, action='store_true')
