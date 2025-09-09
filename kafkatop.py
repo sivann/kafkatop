@@ -9,9 +9,8 @@ import os
 import signal
 import pprint
 import json
-import logging
+#import logging
 import statistics
-import random
 import re
 import time
 import datetime
@@ -290,6 +289,9 @@ def calc_rate(kd1, kd2):
             po2_sum = sum(po2.values())
             events_consumed = po2_sum - po1_sum
             time_delta =  kd2['group_offsets_ts'] - kd1['group_offsets_ts']
+            if time_delta == 0:
+                print(f"WARNING: time_delta is 0 for group {g} and topic {t}, skipping")
+                continue
             events_consumption_rate = round(events_consumed/time_delta,3) # messages per second 
 
             if t not in kd2['topic_offsets']:
@@ -365,10 +367,10 @@ def lag_health(group, lag, rate):
     rs = rate['remaining_sec']
     if rs < 60:
         sc['eta']='[bold green]'
-        st['eta']='OK'
+        st['eta']={'status': 'OK', 'reason':'ETA < 1m'}
     elif rs < 120:
         sc['eta']='[bold yellow]'
-        st['eta']={'status': 'OK', 'reason':'ETA > 1m'}
+        st['eta']={'status': 'OK', 'reason':'ETA < 2m'}
     elif rs < 600:
         sc['eta']='[bold yellow]'
         st['eta']={'status': 'WARNING', 'reason':'ETA > 2m'}
@@ -472,7 +474,7 @@ def lag_show_rich(params):
     if params['kafka_poll_iterations'] == 0:
         sys.exit(0)
 
-    def generate_table(iiteration, kd, rates) -> Table:
+    def generate_table(iteration, kd, rates) -> Table:
         dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         table = Table(title=f"Lags and Rates\n[bold cyan]Last poll: {dt}, poll period: {params['kafka_poll_period']}s, poll: \[{iteration}]", 
         show_lines=False, 
@@ -499,7 +501,7 @@ def lag_show_rich(params):
 
                 # Highlight entire row if a cell has issues
                 # More colors: https://rich.readthedocs.io/en/stable/appendix/colors.html#appendix-colors
-                if st['eta'] != 'OK':
+                if 'status' in st['eta'] and st['eta']['status'] != 'OK':
                     row_style='on dark_red' #also: gray23 ,  reverse
                 else:
                     row_style=None
