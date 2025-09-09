@@ -42,7 +42,7 @@ from rich.text import Text
 from rich.align import Align
 from rich.console import Group
 
-VERSION='1.12'
+VERSION='1.13'
 
 # Global variables for keyboard handling
 stop_program = False
