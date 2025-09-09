@@ -16,6 +16,11 @@ import time
 import datetime
 import argparse
 import humanize
+import readchar
+from threading import Thread
+import signal
+import fcntl
+import struct
 
 from confluent_kafka import (KafkaException, ConsumerGroupTopicPartitions,
                              TopicPartition, ConsumerGroupState, TopicCollection,
@@ -32,8 +37,130 @@ from rich.console import Console
 from rich.table import Table
 from rich.live import Live
 from rich import box
+from rich.panel import Panel
+from rich.text import Text
+from rich.align import Align
+from rich.console import Group
 
 VERSION='1.12'
+
+# Global variables for keyboard handling
+stop_program = False
+sort_key = None
+force_refresh = False
+warnings = []  # Store warnings to display in the top panel
+terminal_resized = False  # Flag to indicate terminal resize
+
+def add_warning(message):
+    """Add a warning message to be displayed in the top panel"""
+    global warnings
+    warnings.append(f"[yellow]{message}[/yellow]")
+    # Keep only the last 10 warnings to avoid clutter
+    if len(warnings) > 10:
+        warnings = warnings[-10:]
+
+def get_warnings_panel():
+    """Create a panel with current warnings - only visible when there are warnings"""
+    global warnings
+    if not warnings:
+        return None
+    
+    # Get terminal size for dynamic height calculation
+    try:
+        import shutil
+        terminal_height = shutil.get_terminal_size().lines
+        # Use 20% of terminal height for warnings panel, max 8 lines, min 3 lines
+        max_warnings_height = max(3, min(8, int(terminal_height * 0.2)))
+    except:
+        max_warnings_height = 5  # fallback
+    
+    # Limit warnings to fit in the calculated height
+    display_warnings = warnings[-max_warnings_height:] if len(warnings) > max_warnings_height else warnings
+    
+    warning_text = "\n".join(display_warnings)
+    
+    # Add indicator if there are more warnings than displayed
+    if len(warnings) > max_warnings_height:
+        warning_text += f"\n[yellow]... and {len(warnings) - max_warnings_height} more warnings[/yellow]"
+    
+    return Panel(
+        warning_text,
+        title="[bold red]Warnings[/bold red]",
+        border_style="red",
+        padding=(0, 1)
+    )
+
+def handle_terminal_resize(signum, frame):
+    """Handle terminal resize signal"""
+    global terminal_resized
+    terminal_resized = True
+
+def clear_old_warnings():
+    """Clear warnings older than 30 seconds to prevent clutter"""
+    global warnings
+    # Keep warnings based on terminal size
+    try:
+        import shutil
+        terminal_height = shutil.get_terminal_size().lines
+        max_warnings = max(3, min(10, int(terminal_height * 0.15)))  # 15% of terminal height
+    except:
+        max_warnings = 5  # fallback
+    
+    if len(warnings) > max_warnings:
+        warnings = warnings[-max_warnings:]
+
+def show_final_state(iteration, kd, rates, console, generate_table_func, wait_for_input=True):
+    """Show final state before exiting"""
+    # Exit the live display context first
+    console.clear()
+    
+    # Create final table without live updates
+    final_table = generate_table_func(iteration, kd, rates)
+    
+    # Print final state
+    console.print("\n[bold cyan]Final State - Exiting[/bold cyan]\n")
+    console.print(final_table)
+    
+    if wait_for_input:
+        console.print(f"\n[dim]Exited after {iteration} iterations. Press any key to continue...[/dim]")
+        # Wait for user input before exiting
+        try:
+            import readchar
+            readchar.readkey()
+        except:
+            pass
+    else:
+        console.print(f"\n[dim]Exited after {iteration} iterations.[/dim]")
+
+def check_for_quit():
+    """
+    Runs in a separate thread, waiting for keyboard input.
+    """
+    global stop_program, sort_key, force_refresh
+    while not stop_program:
+        try:
+            # This will block until a key is pressed
+            key = readchar.readkey().lower()
+            
+            if key == 'q':
+                stop_program = True
+            elif key in ['g', 't', 'p', 'e', 'l', 'c']:
+                if key == 'g':
+                    sort_key = 'group'
+                elif key == 't':
+                    sort_key = 'topic'
+                elif key == 'p':
+                    sort_key = 'partitions'
+                elif key == 'e':
+                    sort_key = 'eta'
+                elif key == 'l':
+                    sort_key = 'lag'
+                elif key == 'c':
+                    sort_key = 'rate'
+                force_refresh = True  # Trigger immediate refresh for sorting
+        except (EOFError, KeyboardInterrupt):
+            stop_program = True
+            break
 
 
 # a: kafka AdminClient instance
@@ -212,7 +339,7 @@ def calc_lag(a, params):
                 kd['topics_with_groups'][topic]['groups'].append(group)
             
         else:
-            print(f'Warning: no offsets for group (never committed data): {group}') # can happen if never had data
+            add_warning(f'No offsets for group (never committed data): {group}') # can happen if never had data
             continue
 
 
@@ -281,7 +408,7 @@ def calc_rate(kd1, kd2):
             #print(f'Topic:{t}, group:{g}')
 
             if g not in kd2['group_offsets'] or g not in  kd1['group_offsets']:
-                print(f"WARNING: group {g} disappeared, skipping")
+                add_warning(f"Group {g} disappeared, skipping")
                 continue # group disappeared
             po1 = kd1['group_offsets'][g][t] # part offsets
             po2 = kd2['group_offsets'][g][t] # part offsets
@@ -290,12 +417,12 @@ def calc_rate(kd1, kd2):
             events_consumed = po2_sum - po1_sum
             time_delta =  kd2['group_offsets_ts'] - kd1['group_offsets_ts']
             if time_delta == 0:
-                print(f"WARNING: time_delta is 0 for group {g} and topic {t}, skipping")
+                add_warning(f"Time delta is 0 for group {g} and topic {t}, skipping")
                 continue
             events_consumption_rate = round(events_consumed/time_delta,3) # messages per second 
 
             if t not in kd2['topic_offsets']:
-                print(f"WARNING: Topic {t} not found in group data {g}: not supported  multiple topics per consumer group, skipping")
+                add_warning(f"Topic {t} not found in group data {g}: not supported multiple topics per consumer group, skipping")
                 continue
 
             events_arrived = sum(kd2['topic_offsets'][t].values()) - sum(kd1['topic_offsets'][t].values())  # Diff of sum of topic offsets on all partitions 
@@ -441,6 +568,18 @@ def show_summary_json(params):
  
 
 def lag_show_rich(params):
+    global stop_program, force_refresh, terminal_resized
+    
+    # Save original terminal state for restoration
+    original_termios = None
+    try:
+        import termios
+        import sys
+        if hasattr(sys.stdin, 'fileno') and sys.stdin.isatty():
+            fd = sys.stdin.fileno()
+            original_termios = termios.tcgetattr(fd)
+    except:
+        pass
     a = params['a']
     kd = calc_lag(a, params)
 
@@ -474,29 +613,74 @@ def lag_show_rich(params):
     if params['kafka_poll_iterations'] == 0:
         sys.exit(0)
 
-    def generate_table(iteration, kd, rates) -> Table:
+    def generate_table(iteration, kd, rates):
+        global sort_key
         dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Add keyboard shortcuts to caption
+        caption = "Legend: [cyan]INFO[/] [green]OK[/] [yellow]WARN[/] [magenta]ERR[/] [red]CRIT[/] | Keys: [green]q[/green]uit, Sorting: [green]G[/green]roup, [green]T[/green]opic, [green]P[/green]artitions, [green]E[/green]TA, [green]L[/green]ag, [green]C[/green]onsumed"
+        if sort_key:
+            caption += f" | Sorted by: [bold]{sort_key}[/] (highlighted column)"
+            
         table = Table(title=f"Lags and Rates\n[bold cyan]Last poll: {dt}, poll period: {params['kafka_poll_period']}s, poll: \[{iteration}]", 
         show_lines=False, 
         box=box.SIMPLE_HEAD,
-        caption="Legend: [cyan]INFO[/] [bold  green]OK[/] [bold yellow]WARN[/] [bold magenta]ERR[/] [bold red]CRIT[/]")
+        caption=caption,
+        caption_style="bold bright_white")
 
-        table.add_column("Group", justify="left", style="cyan", no_wrap=True)
-        table.add_column("Topic", style="cyan")
-        table.add_column("Partitions", style="cyan")
-        table.add_column("Since\n(sec)", justify="right", style="green")
-        table.add_column("Events\nConsumed", justify="right",  style="green")
-        table.add_column("New topic\nevts/sec", justify="right", style="green")
-        table.add_column("Consumed\nevts/sec", justify="right", style="green")
-        table.add_column("Est. time\nto consume", justify="right", style="green")
-        table.add_column("Total Lag", justify="right", style="magenta")
+        # Create headers with highlighted first letters and reverse video for sorted column
+        if sort_key == 'group':
+            group_header = "[reverse bold bright_green]G[/reverse bold bright_green]roup"
+        else:
+            group_header = "[bold bright_green]G[/bold bright_green]roup"
+            
+        if sort_key == 'topic':
+            topic_header = "[reverse bold bright_green]T[/reverse bold bright_green]opic"
+        else:
+            topic_header = "[bold bright_green]T[/bold bright_green]opic"
+            
+        if sort_key == 'partitions':
+            partitions_header = "[reverse bold bright_green]P[/reverse bold bright_green]artitions"
+        else:
+            partitions_header = "[bold bright_green]P[/bold bright_green]artitions"
+            
+        since_header = "Since\n(sec)"
+        events_header = "Events\nConsumed"
+        new_rate_header = "New topic\nevts/sec"
+        
+        if sort_key == 'rate':
+            consumed_rate_header = "[reverse bold bright_green]C[/reverse bold bright_green]onsumed\nevts/sec"
+        else:
+            consumed_rate_header = "[bold bright_green]C[/bold bright_green]onsumed\nevts/sec"
+            
+        if sort_key == 'eta':
+            eta_header = "[reverse bold bright_green]E[/reverse bold bright_green]st. time\nto consume"
+        else:
+            eta_header = "[bold bright_green]E[/bold bright_green]st. time\nto consume"
+            
+        if sort_key == 'lag':
+            lag_header = "[reverse bold bright_green]L[/reverse bold bright_green]ag"
+        else:
+            lag_header = "Total Lag"
 
+        table.add_column(group_header, justify="left", style="cyan", no_wrap=True)
+        table.add_column(topic_header, style="cyan")
+        table.add_column(partitions_header, style="cyan")
+        table.add_column(since_header, justify="right", style="green")
+        table.add_column(events_header, justify="right",  style="green")
+        table.add_column(new_rate_header, justify="right", style="green")
+        table.add_column(consumed_rate_header, justify="right", style="green")
+        table.add_column(eta_header, justify="right", style="green")
+        table.add_column(lag_header, justify="right", style="magenta")
+
+        # Collect all rows first for sorting
+        rows_data = []
         for g in rates:
             for t in rates[g]:
                 state = kd['consumer_groups']['properties'][g]['state']
                 if 'events_consumed' not in rates[g][t]:
                     continue
-                lag = kd2['group_lags'][g][t]['sum']
+                lag = kd['group_lags'][g][t]['sum']  # Fixed: was kd2, should be kd
                 st, s = lag_health(g, lag, rates[g][t])
 
                 # Highlight entire row if a cell has issues
@@ -515,21 +699,81 @@ def lag_show_rich(params):
                     g1=g
                     t1=t
 
-                t =  kd2['group_lags'][g][t]['topic']
+                # Store row data for sorting
+                row_data = {
+                    'group': g1,
+                    'topic': t1,
+                    'partitions': len(kd['group_lags'][g][t]['partlags'].keys()),
+                    'time_delta': rates[g][t]['time_delta'],
+                    'events_consumed': rates[g][t]['events_consumed'],
+                    'events_arrival_rate': rates[g][t]['events_arrival_rate'],
+                    'events_consumption_rate': rates[g][t]['events_consumption_rate'],
+                    'rem_hms': rates[g][t]['rem_hms'],
+                    'lag_sum': kd['group_lags'][g][t]['sum'],
+                    'rate_style': s['rate'],
+                    'eta_style': s['eta'],
+                    'lag_style': s['lag'],
+                    'row_style': row_style,
+                    'sort_group': g,  # For sorting by original group name
+                    'sort_topic': t   # For sorting by original topic name
+                }
+                rows_data.append(row_data)
 
-                table.add_row(g1,  t1,
-                    str(len(kd['group_lags'][g][t]['partlags'].keys())), 
+        # Sort rows based on sort_key
+        if sort_key == 'group':
+            rows_data.sort(key=lambda x: x['sort_group'])
+        elif sort_key == 'topic':
+            rows_data.sort(key=lambda x: x['sort_topic'])
+        elif sort_key == 'partitions':
+            rows_data.sort(key=lambda x: x['partitions'], reverse=True)
+        elif sort_key == 'eta':
+            # Sort by remaining time (convert to seconds for comparison)
+            def eta_sort_key(x):
+                eta_str = x['rem_hms']
+                if eta_str == '-':
+                    return float('inf')  # Put at end
+                try:
+                    # Parse time format like "0:00:05" or "1:23:45"
+                    parts = eta_str.split(':')
+                    if len(parts) == 3:
+                        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    return 0
+                except:
+                    return float('inf')
+            rows_data.sort(key=eta_sort_key, reverse=True)
+        elif sort_key == 'lag':
+            rows_data.sort(key=lambda x: x['lag_sum'], reverse=True)
+        elif sort_key == 'rate':
+            rows_data.sort(key=lambda x: x['events_consumption_rate'], reverse=True)
 
-                    f"{rates[g][t]['time_delta']:.2f}",
-                    f"{humanize.metric(rates[g][t]['events_consumed'])}", 
-                    f"{humanize.metric(rates[g][t]['events_arrival_rate'])}", 
-                    f"{s['rate']}{humanize.metric(rates[g][t]['events_consumption_rate'])}", 
-                    f"{s['eta']}{rates[g][t]['rem_hms']}", 
-                    f"{s['lag']}{humanize.metric(kd['group_lags'][g][t]['sum'])}",
-                    style=row_style
-                )
-                #print(f"{g:45} consumed {rates[g]['events_consumed']:8} evts in {rates[g]['time_delta']:3.1f}s,"
-        return table
+        # Add sorted rows to table
+        for row_data in rows_data:
+            table.add_row(
+                row_data['group'],
+                row_data['topic'],
+                str(row_data['partitions']),
+                f"{row_data['time_delta']:.2f}",
+                f"{humanize.metric(row_data['events_consumed'])}", 
+                f"{humanize.metric(row_data['events_arrival_rate'])}", 
+                f"{row_data['rate_style']}{humanize.metric(row_data['events_consumption_rate'])}", 
+                f"{row_data['eta_style']}{row_data['rem_hms']}", 
+                f"{row_data['lag_style']}{humanize.metric(row_data['lag_sum'])}",
+                style=row_data['row_style']
+            )
+        
+        # Create a group with warnings panel (if any) and the table
+        components = []
+        
+        # Add warnings panel if there are any warnings
+        warnings_panel = get_warnings_panel()
+        if warnings_panel:
+            components.append(warnings_panel)
+        
+        # Add the main table
+        components.append(table)
+        
+        # Return a Group containing all components
+        return Group(*components)
 
 
     iteration=0
@@ -540,21 +784,83 @@ def lag_show_rich(params):
     kd2 = calc_lag(a, params)
     rates = calc_rate(kd1, kd2) 
 
+    # Set up terminal resize signal handler
+    signal.signal(signal.SIGWINCH, handle_terminal_resize)
+    
+    # Start the background thread to listen for keyboard input
+    key_thread = Thread(target=check_for_quit, daemon=True)
+    key_thread.start()
+
     table = generate_table(iteration, kd2, rates)
     #console.print(table)
-    live = Live(table, refresh_per_second=1)
+    
+    # Configure console for better terminal compatibility and reduced flickering
+    import os
+    # Set environment variables to help with terminal detection
+    os.environ.setdefault('TERM', 'xterm-256color')
+    os.environ.setdefault('COLORTERM', 'truecolor')
+    
+    console = Console(force_terminal=True, legacy_windows=False, width=None, height=None)
+    live = Live(table, refresh_per_second=0.5, screen=True, console=console, 
+                auto_refresh=False)  # Disable auto-refresh to control updates manually
     
     with live: # Live only works in with..
-        while True:
+        while not stop_program:
             kd2 = calc_lag(a, params)
             rates = calc_rate(kd1, kd2) 
             kd1 = kd2
             iteration += 1
-            time.sleep(params['kafka_poll_period'])
+            clear_old_warnings()  # Clean up old warnings
+            
+            # Check for terminal resize and force refresh if needed
+            if terminal_resized:
+                terminal_resized = False
+                # Force a complete refresh of the console
+                console.clear()
+            
             live.update(generate_table(iteration, kd2, rates))
+            live.refresh()  # Manual refresh for better control
 
             if iteration==params['kafka_poll_iterations'] and params['kafka_poll_iterations']>0:
-                sys.exit(0)
+                # Exit the live context first, then show final state
+                break
+            
+            # Sleep in small chunks to allow immediate quit response and sorting updates
+            sleep_time = params['kafka_poll_period']
+            sleep_chunk = 0.1  # Check for quit every 100ms
+            while sleep_time > 0 and not stop_program:
+                time.sleep(min(sleep_chunk, sleep_time))
+                sleep_time -= sleep_chunk
+                
+                # Check if we need to refresh immediately (for sorting or terminal resize)
+                if force_refresh or terminal_resized:
+                    if terminal_resized:
+                        terminal_resized = False
+                        console.clear()  # Clear console on resize
+                    if force_refresh:
+                        force_refresh = False
+                    live.update(generate_table(iteration, kd2, rates))
+                    live.refresh()  # Manual refresh for sorting updates or resize
+                    break  # Exit the sleep loop to refresh immediately
+    
+    # Show final state when quitting with 'q' or reaching max iterations
+    if stop_program:
+        show_final_state(iteration, kd2, rates, console, generate_table, wait_for_input=False)
+    elif iteration == params['kafka_poll_iterations'] and params['kafka_poll_iterations'] > 0:
+        show_final_state(iteration, kd2, rates, console, generate_table, wait_for_input=False)
+    
+    # Restore terminal state to prevent hidden characters
+    try:
+        import termios
+        import sys
+        if original_termios and hasattr(sys.stdin, 'fileno') and sys.stdin.isatty():
+            fd = sys.stdin.fileno()
+            # Restore original terminal settings
+            termios.tcsetattr(fd, termios.TCSADRAIN, original_termios)
+    except:
+        pass
+    
+    print("Program finished.")
 
 
 def init_conf(args):
@@ -645,20 +951,20 @@ def topic_nparts(params, tname):
 if __name__ == '__main__':
 
     argparser = argparse.ArgumentParser(description='Kafka consumer statistics', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    argparser.add_argument('--kafka-broker', dest='kafka_broker', help='Broker IP', required = False, default='localhost' )
-    argparser.add_argument('--text', dest='text', help='Only plain text, no rich output.', required = False, default=False, action='store_true' )
-    argparser.add_argument('--poll-period', dest='kafka_poll_period', help='Kafka offset poll period (seconds) for evts/sec calculation', required = False, default=5)
-    argparser.add_argument('--poll-iterations', dest='kafka_poll_iterations', help='How many times to query and display stats. -1 = Inf', required = False, default=15)
-    argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='If group matches regex, exclude ', required = False, default=None )# default='_[0-9]+$')
-    argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Include *only* the groups which match regex', required = False, default=None)
-    argparser.add_argument('--status', dest='kafka_status', help='Report health status in json and exit.', required = False, action='store_true')
+    argparser.add_argument('--kafka-broker', dest='kafka_broker', help='Broker address (host:port)', required = False, default='localhost' )
+    argparser.add_argument('--text', dest='text', help='Disable rich text and color', required = False, default=False, action='store_true' )
+    argparser.add_argument('--poll-period', dest='kafka_poll_period', help='Poll interval (sec) for rate calculations', required = False, default=5)
+    argparser.add_argument('--poll-iterations', dest='kafka_poll_iterations', help='Refresh count before exiting (-1 for infinite)', required = False, default=15)
+    argparser.add_argument('--group-exclude-pattern', dest='kafka_group_exclude_pattern', help='Exclude groups matching regex', required = False, default=None )# default='_[0-9]+$')
+    argparser.add_argument('--group-filter-pattern', dest='kafka_group_filter_pattern', help='Filter groups by regex', required = False, default=None)
+    argparser.add_argument('--status', dest='kafka_status', help='Report health as JSON and exit.', required = False, action='store_true')
     argparser.add_argument('--summary', dest='kafka_summary', help='Display consumer groups, states, topics, partitions, and lags summary.', default=False, required = False, action='store_true')
-    argparser.add_argument('--summary-json', dest='kafka_summary_json', help='Display consumer groups, states, topics, partitions, and lags summary, in json.', default=False, required = False, action='store_true')
-    argparser.add_argument('--topicinfo', dest='kafka_topicinfo', help='Only show informational data about the cluster, topics, partitions, no stats (fast).', default=False, required = False, action='store_true')
-    argparser.add_argument('--topicinfo-parts', dest='kafka_topicinfo_parts', help='Same as --info but also show data about partitions, isr, leaders.', default=False, required = False, action='store_true')
-    argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Only show rows with issues.', default=False, required = False, action='store_true')
-    argparser.add_argument('--anonymize', dest='anonymize', help='Anonymize topics and groups.', default=False, required = False, action='store_true')
-    argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show groups with no members.', default=False, required = False, action='store_true')
+    argparser.add_argument('--summary-json', dest='kafka_summary_json', help='Display consumer groups, states, topics, partitions, and lags summary, in JSON.', default=False, required = False, action='store_true')
+    argparser.add_argument('--topicinfo', dest='kafka_topicinfo', help='Show topic metadata only (fast).', default=False, required = False, action='store_true')
+    argparser.add_argument('--topicinfo-parts', dest='kafka_topicinfo_parts', help='Show topic and partition metadata', default=False, required = False, action='store_true')
+    argparser.add_argument('--only-issues', dest='kafka_only_issues', help='Show only groups with high lag/issues.', default=False, required = False, action='store_true')
+    argparser.add_argument('--anonymize', dest='anonymize', help='Anonymize topic and group names.', default=False, required = False, action='store_true')
+    argparser.add_argument('--all', dest='kafka_show_empty_groups', help='Show all groups (including those with no members).', default=False, required = False, action='store_true')
     argparser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     args = argparser.parse_args()
 
