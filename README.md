@@ -17,6 +17,8 @@
 -   **Anonymization Mode:** Anonymize topic and group names when sharing your screen or logs.
 -   **Metadata Reporting:** Export an overview of consumer and topic metadata (topics, partitions, ISR, leaders) in JSON.
 
+# Installing
+You may download the multi-platform pex file from [releases](https://github.com/sivann/kafkatop/releases). It is an one-file executable, compatible with x86_64 which just needs one of python 3.9-3.13 in your path.
 
 ## Quick Start
 
@@ -115,9 +117,6 @@ results in:
 [...]
 }
 ```
-
-# Installing
-You may download the multi-platform pex file from [releases](https://github.com/sivann/kafkatop/releases). It is an one-file executable, compatible with x86_64 which just needs one of python 3.9-3.13 in your path.
 
 # Contributing
 ## Building
