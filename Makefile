@@ -30,19 +30,11 @@ init: $(VENV_DIR)
 $(VENV_DIR):
 	echo "Creating $(VENV_DIR)"
 	$(PYTHON) -m venv $(VENV_DIR) || echo "Failed creating venv" 
-	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
-	echo "venv: VIRTUAL_ENV is set to $${VIRTUAL_ENV:?}" #errors if not set above
-	err=0
-	echo "Upgrading pip"
-	pip install --upgrade pip || err=1
-	echo "donepip"
-	pip install .[dev] || err=1 # includes dependencis + those in the optional-dependencies.dev section
-	@[[ "$${err}" == "0" ]] || (echo "ERRORS above"; exit 1)
+	$(VENV_DIR)/bin/pip install --upgrade pip
+	$(VENV_DIR)/bin/pip install .[dev]
 
 venv_update: $(VENV_DIR)
-	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
-	echo "venv_update: VIRTUAL_ENV is set to ${VIRTUAL_ENV:?}" #errors if not set above
-	pip install .[dev]
+	$(VENV_DIR)/bin/pip install .[dev]
 
 clean: ## >> remove all environment and build files
 	@echo ""
@@ -50,24 +42,17 @@ clean: ## >> remove all environment and build files
 	rm -rf $(VENV_DIR) makepex.* wh/ venv-*/ platforms.json kafkatop kafkatop.egg-info/ build/ *.pex  releasebody.md platforms.tmp
 
 pex: $(VENV_DIR)
-	if ! source $(VENV_DIR)/bin/activate; then
-		/bin/echo "Failed activating"
-		exit 1
-	fi
-	echo "pex: VIRTUAL_ENV is set to $${VIRTUAL_ENV:?}" #errors if not set above
 	echo "PYTHON is set to $(PYTHON)" #errors if not set above
-	pip install pex
-	pex . --disable-cache -o kafkatop -e kafkatop:main --python-shebang $(PYTHON)
+	$(VENV_DIR)/bin/pip install pex
+	$(VENV_DIR)/bin/pex . --disable-cache -o kafkatop -e kafkatop:main --python-shebang $(PYTHON)
 
 #pex-multiplatform
 pex-mp:
 	./make-pex-mp.sh
 
 build: $(VENV_DIR)
-	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
-	pip install build
-	python -m build
+	$(VENV_DIR)/bin/pip install build
+	$(VENV_DIR)/bin/python -m build
 
-publish: $(VENV_DIR)
-	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
-	twine upload dist/*
+publish: $(VENV_DIR) build
+	$(VENV_DIR)/bin/twine upload dist/*
