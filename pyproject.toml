@@ -5,11 +5,28 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kafkatop"
 readme = "README.md"
-dynamic = ["version"]
+version = "1.14"
 description = "A real-time monitoring tool for Apache Kafka that displays consumer lag and event rates"
 authors = [
     {name = "Spiros Ioannou"},
 ]
+license = "MIT"
+keywords = ["kafka", "monitoring", "consumer", "lag", "real-time"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Monitoring",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+urls = {Homepage = "https://github.com/sivann/kafkatop", Repository = "https://github.com/sivann/kafkatop"}
 requires-python = ">=3.9"
 dependencies = [
     "confluent-kafka",
@@ -25,6 +42,7 @@ dependencies = [
 dev = [
     "wheel",
     "twine",
+    "build",
     "pytest",
     "coverage",
 ]

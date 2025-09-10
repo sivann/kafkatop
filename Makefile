@@ -65,7 +65,8 @@ pex-mp:
 
 build: $(VENV_DIR)
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
-	python setup.py sdist bdist_wheel
+	pip install build
+	python -m build
 
 publish: $(VENV_DIR)
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
