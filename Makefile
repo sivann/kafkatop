@@ -36,7 +36,7 @@ $(VENV_DIR):
 	echo "donepip"
 	pip install -r requirements.txt || err=1
 	pip install .[dev] || err=1
-	@[[ "${err}" == "0" ]] || (echo "ERRORS above"; exit 1)
+	@[[ "$${err}" == "0" ]] || (echo "ERRORS above"; exit 1)
 
 venv_update: $(VENV_DIR)
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
