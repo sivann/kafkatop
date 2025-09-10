@@ -79,7 +79,9 @@ platforms_args=$(cat pexinspect.json | jq .platform |  sed -e 's/^/--platform /'
 echo ""
 rm -f makepex.*
 echo '. venv/bin/activate' > makepex.$$
-echo "pex . --disable-cache -o $pexfn -c kafkatop.py"' --python-shebang "#!/usr/bin/env python3" -f wh --resolve-local-platforms'  $platforms_args >> makepex.$$
+#echo "pex . --disable-cache -o $pexfn -c kafkatop.py"' --python-shebang "#!/usr/bin/env python3" -f wh --resolve-local-platforms'  $platforms_args >> makepex.$$
+echo "pex . --disable-cache -o $pexfn -e kafkatop:main"' --python-shebang "#!/usr/bin/env python3" -f wh --resolve-local-platforms' $platforms_args >> makepex.$$
+
 chmod +x  makepex.$$
 echo "*** Now running the following to create the multi-platform pex: ./makepex.$$"
 cat makepex.$$

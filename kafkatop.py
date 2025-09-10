@@ -42,7 +42,7 @@ from rich.text import Text
 from rich.align import Align
 from rich.console import Group
 
-VERSION='1.14-1-g2f2a1e5'
+VERSION='1.14-13-g3f4da5f'
 
 # Global variables for keyboard handling
 stop_program = False
@@ -365,7 +365,7 @@ def calc_lag(a, params):
         kd['group_lags'][group]={}
         #topic = list(kd['group_offsets'][group].keys())[0] # first key, first topic, we only care for one
         for topic in  list(kd['group_offsets'][group].keys()):
-            tos = kd['topic_offsets'][topic] # topic latest offsets per partition: '{0: 1234, 1:1234 ..]' 
+            tos = kd['topic_offsets'][topic] # topic latest offsets per partition: '{0: 1234, 1:1234 ..}' 
             gos = kd['group_offsets'][group][topic] # consumer group offsets per topic partition
 
             lags=[] # offset lag per partition
@@ -391,7 +391,7 @@ def calc_lag(a, params):
             kd['group_lags'][group][topic]['median'] = statistics.median(lags) if len(lags) else 0
             kd['group_lags'][group][topic]['min'] = min(lags) if len(lags) else 0
             #if len(lags):
-            #    print(f'Group: {group:<40}, topic:{topic:<20}, parts:{len(tos):5}, LAG mean: {statistics.mean(lags):10.1f}, median: {statistics.median(lags)}')
+            #    print(f'Group: {group:<40}, topic:{topic:<20}, parts:{len(tos):5}, LAG mean: -, median: -')
             #else:
             #    print(f'Group: {group:<40}, topic:{topic:<20}, parts:{len(tos):5}, LAG mean: -, median: -')
     return kd
@@ -510,7 +510,6 @@ def lag_health(group, lag, rate):
 
     # Lag and rate
     sc['rate']='[green]'
-    st['rate']='OK'
     st['rate']={'status': 'OK', 'reason':''}
     sc['lag']='[white]'
     st['lag']={'status': 'OK', 'reason':''}
@@ -567,7 +566,7 @@ def show_summary_json(params):
     print(json.dumps(summary,indent=2))
  
 
-def lag_show_rich(params):
+def lag_show_rich(params, args):
     global stop_program, force_refresh, terminal_resized
     
     # Save original terminal state for restoration
@@ -895,7 +894,7 @@ def signal_handler(signal, frame):
     sys.exit(0)
 
 # --info
-def show_kafka_topicinfo(params):
+def show_kafka_topicinfo(params, args):
     info={
         'topics':{},
         'brokers':{},
@@ -947,9 +946,7 @@ def topic_nparts(params, tname):
     return nparts
 
 
-
-if __name__ == '__main__':
-
+def main():
     argparser = argparse.ArgumentParser(description='Kafka consumer statistics', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     argparser.add_argument('--kafka-broker', dest='kafka_broker', help='Broker address (host:port)', required = False, default='localhost' )
     argparser.add_argument('--text', dest='text', help='Disable rich text and color', required = False, default=False, action='store_true' )
@@ -973,7 +970,7 @@ if __name__ == '__main__':
 
 
     if args.kafka_topicinfo or args.kafka_topicinfo_parts:
-        show_kafka_topicinfo(params)
+        show_kafka_topicinfo(params, args)
         sys.exit(0)
 
     if args.kafka_status:
@@ -985,5 +982,7 @@ if __name__ == '__main__':
     elif args.text:
         lag_show_text(params)
     else:
-        lag_show_rich(params)
+        lag_show_rich(params, args)
 
+if __name__ == '__main__':
+    main()
