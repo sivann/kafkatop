@@ -38,7 +38,7 @@ kafkatop
 
 ```
 # Port-forward the pod's port locally in another terminal, or in the background:
-timeout kubectl -n db port-forward kafka-0 9092:9092 &
+timeout kubectl port-forward kafka-0 9092:9092 &
 
 # Run kafkatop on the node
 kafkatop
