@@ -36,22 +36,20 @@ $(VENV_DIR):
 	echo "Upgrading pip"
 	pip install --upgrade pip || err=1
 	echo "donepip"
-	pip install -r requirements.txt || err=1
-	pip install .[dev] || err=1
+	pip install .[dev] || err=1 # includes dependencis + those in the optional-dependencies.dev section
 	@[[ "$${err}" == "0" ]] || (echo "ERRORS above"; exit 1)
 
 venv_update: $(VENV_DIR)
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
 	echo "venv_update: VIRTUAL_ENV is set to ${VIRTUAL_ENV:?}" #errors if not set above
-	pip install -r requirements.txt
 	pip install .[dev]
 
 clean: ## >> remove all environment and build files
 	@echo ""
 	@echo "$(ccso)--> Removing virtual environment $(ccend)"
-	rm -rf $(VENV_DIR) makepex.* wh/ venv-*/ platforms.json kafkatop
+	rm -rf $(VENV_DIR) makepex.* wh/ venv-*/ platforms.json kafkatop kafkatop.egg-info/ build/ *.pex  releasebody.md platforms.tmp
 
-pex:
+pex: $(VENV_DIR)
 	if ! source $(VENV_DIR)/bin/activate; then
 		/bin/echo "Failed activating"
 		exit 1
@@ -59,7 +57,7 @@ pex:
 	echo "pex: VIRTUAL_ENV is set to $${VIRTUAL_ENV:?}" #errors if not set above
 	echo "PYTHON is set to $(PYTHON)" #errors if not set above
 	pip install pex
-	pex . --disable-cache -o kafkatop -c kafkatop.py --python-shebang $(PYTHON)
+	pex . --disable-cache -o kafkatop -e kafkatop:main --python-shebang $(PYTHON)
 
 #pex-multiplatform
 pex-mp:
