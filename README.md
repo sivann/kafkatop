@@ -13,8 +13,10 @@
 -   **Real-time Monitoring:** Keep an eye on event consumption and production rates across your Kafka broker.
 -   **Consumer Lag & ETA:** Instantly see the lag for each consumer group and topic, with an estimated time to catch up.
 -   **Flexible Filtering:** Easily filter by topic or consumer group name, and focus on problematic groups with a dedicated flag.
--   **JSON Output:** Export the current status as a JSON object, perfect for integrating with your monitoring and alerting systems.
+-   **JSON Output:** Export the current status as a JSON object, for integrating with batch-collecting monitoring and alerting systems.
 -   **Anonymization Mode:** Anonymize topic and group names when sharing your screen or logs.
+-   **Metadata Reporting:** Export an overview of consumer and topic metadata (topics, partitions, ISR, leaders) in JSON.
+
 
 ## Quick Start
 
