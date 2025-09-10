@@ -7,7 +7,7 @@ SHELL:=/bin/bash
 VENV_DIR = venv
 #PYTHON = python3
 #PYTHON := $(shell /bin/which python3.10)
-PYTHON := $(shell /bin/which python3)
+PYTHON := $(shell /usr/bin/which python3)
 PIP = $(VENV_DIR)/bin/pip
 
 
