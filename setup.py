@@ -30,6 +30,14 @@ setup(
 	license = "",
 	zip_safe = False,
 	install_requires = install_requirements,
+	extras_require={
+		'dev': [
+			'wheel',
+			'twine',
+			'pytest',
+			'coverage'
+		]
+	},
 	scripts= ['kafkatop.py'],
 	packages = []
 	)

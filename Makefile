@@ -34,16 +34,15 @@ $(VENV_DIR):
 	echo "Upgrading pip"
 	pip install --upgrade pip || err=1
 	echo "donepip"
-	pip install wheel || err=1
-	pip install pytest || err=1
-	pip install coverage || err=1
 	pip install -r requirements.txt || err=1
-	@[[ "$${err}" == "0" ]] || (echo "ERRORS above"; exit 1)
+	pip install .[dev] || err=1
+	@[[ "${err}" == "0" ]] || (echo "ERRORS above"; exit 1)
 
 venv_update: $(VENV_DIR)
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
-	echo "venv_update: VIRTUAL_ENV is set to $${VIRTUAL_ENV:?}" #errors if not set above
+	echo "venv_update: VIRTUAL_ENV is set to ${VIRTUAL_ENV:?}" #errors if not set above
 	pip install -r requirements.txt
+	pip install .[dev]
 
 clean: ## >> remove all environment and build files
 	@echo ""
@@ -60,3 +59,11 @@ pex:
 #pex-multiplatform
 pex-mp:
 	./make-pex-mp.sh
+
+build:
+	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
+	python setup.py sdist bdist_wheel
+
+publish:
+	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
+	twine upload dist/*
