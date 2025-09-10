@@ -52,7 +52,10 @@ clean: ## >> remove all environment and build files
 	rm -rf $(VENV_DIR) makepex.* wh/ venv-*/ platforms.json kafkatop
 
 pex:
-	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
+	if ! source $(VENV_DIR)/bin/activate; then
+		/bin/echo "Failed activating"
+		exit 1
+	fi
 	echo "pex: VIRTUAL_ENV is set to $${VIRTUAL_ENV:?}" #errors if not set above
 	echo "PYTHON is set to $(PYTHON)" #errors if not set above
 	pip install pex
@@ -62,10 +65,10 @@ pex:
 pex-mp:
 	./make-pex-mp.sh
 
-build:
+build: $(VENV_DIR)
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
 	python setup.py sdist bdist_wheel
 
-publish:
+publish: $(VENV_DIR)
 	source $(VENV_DIR)/bin/activate || /bin/echo "Failed activating" 
 	twine upload dist/*
