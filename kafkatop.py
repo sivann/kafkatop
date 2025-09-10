@@ -47,6 +47,7 @@ VERSION='1.14-13-g3f4da5f'
 # Global variables for keyboard handling
 stop_program = False
 sort_key = None
+sort_reverse = False
 force_refresh = False
 warnings = []  # Store warnings to display in the top panel
 terminal_resized = False  # Flag to indicate terminal resize
@@ -132,11 +133,11 @@ def show_final_state(iteration, kd, rates, console, generate_table_func, wait_fo
     else:
         console.print(f"\n[dim]Exited after {iteration} iterations.[/dim]")
 
-def check_for_quit():
+def handle_keypress():
     """
     Runs in a separate thread, waiting for keyboard input.
     """
-    global stop_program, sort_key, force_refresh
+    global stop_program, sort_key, sort_reverse, force_refresh
     while not stop_program:
         try:
             # This will block until a key is pressed
@@ -144,19 +145,32 @@ def check_for_quit():
             
             if key == 'q':
                 stop_program = True
-            elif key in ['g', 't', 'p', 'e', 'l', 'c']:
+            elif key in ['g', 'o', 'p', 't', 'l', 'c']:
+                new_sort_key = None
                 if key == 'g':
-                    sort_key = 'group'
-                elif key == 't':
-                    sort_key = 'topic'
+                    new_sort_key = 'group'
+                elif key == 'o':
+                    new_sort_key = 'topic'
                 elif key == 'p':
-                    sort_key = 'partitions'
-                elif key == 'e':
-                    sort_key = 'eta'
+                    new_sort_key = 'partitions'
+                elif key == 't':
+                    new_sort_key = 'eta'
                 elif key == 'l':
-                    sort_key = 'lag'
+                    new_sort_key = 'lag'
                 elif key == 'c':
-                    sort_key = 'rate'
+                    new_sort_key = 'rate'
+                
+                # Toggle reverse if same key pressed twice
+                if sort_key == new_sort_key:
+                    sort_reverse = not sort_reverse
+                else:
+                    # Set default sort direction for new sort key
+                    if new_sort_key == 'eta':
+                        sort_reverse = True  # Time Left: high->low by default
+                    else:
+                        sort_reverse = False  # Other columns: ascending by default
+                
+                sort_key = new_sort_key
                 force_refresh = True  # Trigger immediate refresh for sorting
         except (EOFError, KeyboardInterrupt):
             stop_program = True
@@ -613,19 +627,19 @@ def lag_show_rich(params, args):
         sys.exit(0)
 
     def generate_table(iteration, kd, rates):
-        global sort_key
+        global sort_key, sort_reverse
         dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Add keyboard shortcuts to caption
-        caption = "Legend: [cyan]INFO[/] [green]OK[/] [yellow]WARN[/] [magenta]ERR[/] [red]CRIT[/] | Keys: [green]Q[/green]uit, Sort By: [green]G[/green]roup, [green]T[/green]opic, [green]P[/green]artitions, [green]E[/green]TA, [green]L[/green]ag, [green]C[/green]onsumed"
+        # Create legend text with poll info
+        time_str = datetime.datetime.now().strftime("%H:%M:%S")
+        legend_text = f"[bold cyan]{time_str}[/] period: {params['kafka_poll_period']}s poll: {iteration} | legend: [cyan]INFO[/] [green]OK[/] [yellow]WARN[/] [magenta]ERR[/] [red]CRIT[/] | keys: [green]Q[/green]uit, sort-by: [green]G[/green]roup, T[green]o[/green]pic, [green]P[/green]artitions, [green]T[/green]ime Left, [green]L[/green]ag, [green]C[/green]onsumed"
         if sort_key:
-            caption += f" | Sorted by: [bold]{sort_key}[/] (highlighted column)"
-            
-        table = Table(title=f"Lags and Rates\n[bold cyan]Last poll: {dt}, poll period: {params['kafka_poll_period']}s, poll: \\[{iteration}]", 
-        show_lines=False, 
-        box=box.SIMPLE_HEAD,
-        caption=caption,
-        caption_style="bold bright_white")
+            direction = "↓" if sort_reverse else "↑"
+            legend_text += f" | Sorted by: [bold]{sort_key}[/] {direction} (press again to reverse)"
+        
+        # Create table without title
+        table = Table(show_lines=False, 
+        box=box.SIMPLE_HEAD)
 
         # Create headers with highlighted first letters and reverse video for sorted column
         if sort_key == 'group':
@@ -634,9 +648,9 @@ def lag_show_rich(params, args):
             group_header = "[bold bright_green]G[/bold bright_green]roup"
             
         if sort_key == 'topic':
-            topic_header = "[reverse bold bright_green]T[/reverse bold bright_green]opic"
+            topic_header = "T[reverse bold bright_green]o[/reverse bold bright_green]pic"
         else:
-            topic_header = "[bold bright_green]T[/bold bright_green]opic"
+            topic_header = "T[bold bright_green]o[/bold bright_green]pic"
             
         if sort_key == 'partitions':
             partitions_header = "[reverse bold bright_green]P[/reverse bold bright_green]artitions"
@@ -653,14 +667,14 @@ def lag_show_rich(params, args):
             consumed_rate_header = "[bold bright_green]C[/bold bright_green]onsumed\nevts/sec"
             
         if sort_key == 'eta':
-            eta_header = "[reverse bold bright_green]E[/reverse bold bright_green]st. time\nto consume"
+            eta_header = "[reverse bold bright_green]T[/reverse bold bright_green]ime Left"
         else:
-            eta_header = "[bold bright_green]E[/bold bright_green]st. time\nto consume"
+            eta_header = "[bold bright_green]T[/bold bright_green]ime Left"
             
         if sort_key == 'lag':
             lag_header = "[reverse bold bright_green]L[/reverse bold bright_green]ag"
         else:
-            lag_header = "Total Lag"
+            lag_header = "[bold bright_green]L[/bold bright_green]ag"
 
         table.add_column(group_header, justify="left", style="cyan", no_wrap=True)
         table.add_column(topic_header, style="cyan")
@@ -720,17 +734,17 @@ def lag_show_rich(params, args):
 
         # Sort rows based on sort_key
         if sort_key == 'group':
-            rows_data.sort(key=lambda x: x['sort_group'])
+            rows_data.sort(key=lambda x: x['sort_group'], reverse=sort_reverse)
         elif sort_key == 'topic':
-            rows_data.sort(key=lambda x: x['sort_topic'])
+            rows_data.sort(key=lambda x: x['sort_topic'], reverse=sort_reverse)
         elif sort_key == 'partitions':
-            rows_data.sort(key=lambda x: x['partitions'], reverse=True)
+            rows_data.sort(key=lambda x: x['partitions'], reverse=sort_reverse)
         elif sort_key == 'eta':
             # Sort by remaining time (convert to seconds for comparison)
             def eta_sort_key(x):
                 eta_str = x['rem_hms']
                 if eta_str == '-':
-                    return float('inf')  # Put at end
+                    return float('inf')  # Put at end, let reverse parameter handle direction
                 try:
                     # Parse time format like "0:00:05" or "1:23:45"
                     parts = eta_str.split(':')
@@ -739,11 +753,11 @@ def lag_show_rich(params, args):
                     return 0
                 except:
                     return float('inf')
-            rows_data.sort(key=eta_sort_key, reverse=True)
+            rows_data.sort(key=eta_sort_key, reverse=sort_reverse)
         elif sort_key == 'lag':
-            rows_data.sort(key=lambda x: x['lag_sum'], reverse=True)
+            rows_data.sort(key=lambda x: x['lag_sum'], reverse=sort_reverse)
         elif sort_key == 'rate':
-            rows_data.sort(key=lambda x: x['events_consumption_rate'], reverse=True)
+            rows_data.sort(key=lambda x: x['events_consumption_rate'], reverse=sort_reverse)
 
         # Add sorted rows to table
         for row_data in rows_data:
@@ -760,19 +774,33 @@ def lag_show_rich(params, args):
                 style=row_data['row_style']
             )
         
-        # Create a group with warnings panel (if any) and the table
-        components = []
+        # Create a layout with legend at bottom
+        from rich.layout import Layout
+        
+        # Create layout
+        layout = Layout()
+        
+        # Create main content area
+        main_components = []
         
         # Add warnings panel if there are any warnings
         warnings_panel = get_warnings_panel()
         if warnings_panel:
-            components.append(warnings_panel)
+            main_components.append(warnings_panel)
         
         # Add the main table
-        components.append(table)
+        main_components.append(table)
         
-        # Return a Group containing all components
-        return Group(*components)
+        # Create main content group
+        main_content = Group(*main_components)
+        
+        # Split layout: main content takes most space, legend takes bottom row
+        layout.split_column(
+            Layout(main_content, name="main"),
+            Layout(Text.from_markup(legend_text, style="bold bright_white"), name="legend", size=1)
+        )
+        
+        return layout
 
 
     iteration=0
@@ -787,7 +815,7 @@ def lag_show_rich(params, args):
     signal.signal(signal.SIGWINCH, handle_terminal_resize)
     
     # Start the background thread to listen for keyboard input
-    key_thread = Thread(target=check_for_quit, daemon=True)
+    key_thread = Thread(target=handle_keypress, daemon=True)
     key_thread.start()
 
     table = generate_table(iteration, kd2, rates)
