@@ -1,21 +1,46 @@
 # kafkatop
 
-CLI app to monitor real-time consumption and production rates on kafka broker. 
+**A real-time monitoring tool for Apache Kafka that displays consumer lag and event rates in a clean, top-like interface.**
 
-Shows:
+`kafkatop` provides a simple, yet powerful, way to quickly view the health of your Kafka consumers and topics. It helps you identify bottlenecks and diagnose issues with consumer lag in real-time, directly from your terminal.
 
-* A brief with topic and partitions lists and consumer group statuses
-* Rate of events written to topics
-* Rate of events consumed by consumer groups, per topic
-* LAG per consumer group and topic
-* ETA for each consumer group to consume the remaining topic events
+![kafkatop screenshot](images/kafkatop.png)
 
-Supports:
-* Name filtering
-* Multiple topics/consumer group
-* Showing only troublesome groups, useful if you have hundreds
-* Exporting status in json for mass health surveillance of remote hosts
 
+
+## Features
+
+-   **Real-time Monitoring:** Keep an eye on event consumption and production rates across your Kafka broker.
+-   **Consumer Lag & ETA:** Instantly see the lag for each consumer group and topic, with an estimated time to catch up.
+-   **Flexible Filtering:** Easily filter by topic or consumer group name, and focus on problematic groups with a dedicated flag.
+-   **JSON Output:** Export the current status as a JSON object, perfect for integrating with your monitoring and alerting systems.
+-   **Anonymization Mode:** Anonymize topic and group names when sharing your screen or logs.
+
+## Quick Start
+
+To get started, simply run `kafkatop` specifying the address of a Kafka broker if needed:
+
+```
+kafkatop
+```
+
+### Common Use Cases
+
+**Monitor a specific consumer group:**
+
+```
+ kafkatop --kafka-broker 10.227.1.110  --group-filter-pattern '.*group_name.*'
+```
+
+**Monitor kafka running in kubernetes, from the kubernetes node**
+
+```
+# Port-forward the pod's port locally in another terminal, or in the background:
+timeout kubectl -n db port-forward kafka-0 9092:9092 &
+
+# Run kafkatop on the node
+kafkatop
+```
 
 
 # Usage
@@ -90,9 +115,10 @@ results in:
 ```
 
 # Installing
-You may download the multi-platform pex file from [releases](https://github.com/sivann/kafkatop/releases). It is a one-file executable, compatible with x86_64 and just needs python 3.9, 3.10 or 3.11 in your path.
+You may download the multi-platform pex file from [releases](https://github.com/sivann/kafkatop/releases). It is an one-file executable, compatible with x86_64 which just needs one of python 3.9-3.13 in your path.
 
-# Building
+# Contributing
+## Building
 
 Requires python >=3.9 in your path
 
@@ -105,7 +131,11 @@ Requires python >=3.9 in your path
 ```
 make pex
 ```
-This will create a "kafkatop" pex executable which will include the python code and library dependencies all in one file. It will need the python3 in the path to run.
+This will create a ```kafkatop``` pex executable which will include the python code and library dependencies all in one file. It will need the python3 in the path to run.
+
+### Multiplatform building
+If you have multiple python versions on your environment, you can run ```make-pex-mp.sh``` to create a kafkatop binary which includes dependencies for all python versions.
 
 # License
 This project is licensed under the terms of the MIT license.
+

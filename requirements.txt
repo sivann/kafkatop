@@ -3,4 +3,6 @@ humanize
 rich
 readchar
 # markdown-it-py>3.0.0 dropped support for python 3.9
-markdown-it-py==3.0.0
+markdown-it-py==3.0.0 ; python_version == '3.9'
+markdown-it-py ; python_version >= '3.10'
+
