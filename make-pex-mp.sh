@@ -3,10 +3,12 @@
 # sivann 2023
 # Helps create multiplatform-pex
 
+# Access to runner for troubleshooting compilation:
 #export TERM=vt100
 #sudo apt-get -y install tmate
 #tmate
 #exit
+# 90's solution before discovering tmate:
 #export RHOST="www.sivann.gr";export RPORT=1234;python3 -c 'import socket,os,pty;s=socket.socket();s.connect((os.getenv("RHOST"),int(os.getenv("RPORT"))));[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn("/bin/sh")'
 #exit
 
