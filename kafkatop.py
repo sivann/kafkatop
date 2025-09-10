@@ -621,7 +621,7 @@ def lag_show_rich(params, args):
         if sort_key:
             caption += f" | Sorted by: [bold]{sort_key}[/] (highlighted column)"
             
-        table = Table(title=f"Lags and Rates\n[bold cyan]Last poll: {dt}, poll period: {params['kafka_poll_period']}s, poll: \[{iteration}]", 
+        table = Table(title=f"Lags and Rates\n[bold cyan]Last poll: {dt}, poll period: {params['kafka_poll_period']}s, poll: \\[{iteration}]", 
         show_lines=False, 
         box=box.SIMPLE_HEAD,
         caption=caption,
