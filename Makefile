@@ -21,6 +21,8 @@ ccso = $(shell tput smso)
 #Do not echo commands
 .SILENT:
 
+.PHONY: init venv_update clean pex pex-mp build publish
+
 init: $(VENV_DIR)
 	echo "$(VENV_DIR) exists, type first 'make clean' to start again if needed"
 	#sed -i 
