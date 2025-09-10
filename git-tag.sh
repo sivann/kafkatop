@@ -1,8 +1,25 @@
 #!/bin/bash
 
 
-# this is for macOS
-[ -x /usr/local/bin/gsed ] && sed=/usr/local/bin/gsed || sed=sed
+# Detect sed type by checking version
+# GNU sed reports "GNU sed" in --version output
+if sed --version 2>&1 | grep -q GNU; then
+    SED_TYPE="gnu"
+else
+    SED_TYPE="bsd"
+fi
+echo "Detected sed type: $SED_TYPE"
+
+# Function to handle sed differences between GNU sed and BSD sed
+sed_inplace() {
+    if [ "$SED_TYPE" = "gnu" ]; then
+        # GNU sed
+        sed -i "$@"
+    else
+        # BSD sed (macOS default)
+        sed -i '' "$@"
+    fi
+}
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 lasthash=`git log --decorate=full --all --pretty=format:'%h %d'  |grep 'refs/tags'|head -1|awk '{print $1}'`
@@ -45,12 +62,14 @@ echo ""
 
 
 echo "$newtag" > tag.txt
-sed -i "s/^VERSION.*/VERSION='$newtag'/" kafkatop.py
+sed_inplace "s/^VERSION.*/VERSION='$newtag'/" kafkatop.py
+sed_inplace "s/^version = .*/version = \"$newtag\"/" pyproject.toml
 git diff
 git add tag.txt
 git add kafkatop.py
+git add pyproject.toml
 read -p "Press [Enter] key commit changes:"
-git commit -m "$newtag in tag.txt"
+git commit -m "$newtag in tag.txt, kafkatop.py, and pyproject.toml"
 git push 
 
 echo ""
