@@ -5,3 +5,4 @@ __pycache__
 kafka-lagstats
 kafkatop
 pexinspect.json
+.DS_Store
