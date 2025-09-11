@@ -4,7 +4,7 @@
 
 `kafkatop` provides a simple, yet powerful, way to quickly view the health of your Kafka consumers and topics. It helps you identify bottlenecks and diagnose issues with consumer lag in real-time, directly from your terminal.
 
-![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/main/images/kafkatop0.png)
+![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop0.png)
 
 
 

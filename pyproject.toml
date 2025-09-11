@@ -58,3 +58,6 @@ py-modules = ["kafkatop"]
 [project.scripts]
 kafkatop = "kafkatop:main"
 
+
+#[tool.setuptools.package-data]
+#"" = ["README.md", "images/*"]
