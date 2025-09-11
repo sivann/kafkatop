@@ -4,7 +4,7 @@
 
 `kafkatop` provides a simple, yet powerful, way to quickly view the health of your Kafka consumers and topics. It helps you identify bottlenecks and diagnose issues with consumer lag in real-time, directly from your terminal.
 
-![kafkatop screenshot](images/kafkatop0.png)
+![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/main/images/kafkatop0.png)
 
 
 
@@ -18,7 +18,26 @@
 -   **Metadata Reporting:** Export an overview of consumer and topic metadata (topics, partitions, ISR, leaders) in JSON.
 
 # Installing
+## PEX binary
 You may download the multi-platform pex file from [releases](https://github.com/sivann/kafkatop/releases). It is an one-file executable, compatible with x86_64 which just needs one of python 3.9-3.13 in your path.
+
+## Using pip
+
+You may install with pip:
+
+```
+pip install kafkatop
+```
+
+
+Install inside a virtualenv (recommended practice to avoid polluting system):
+
+```
+python3 -m venv virtual_env # this will create a 'virtual_env' directory
+. bin/virtual_env/activate  # 'activate' the virtualenv. Run 'deactivate' to deactivate.
+pip install kafkatop        # install kafkatop
+kafkatop                    # run 
+```
 
 ## Quick Start
 
