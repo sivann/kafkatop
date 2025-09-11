@@ -116,7 +116,7 @@ def clear_old_warnings():
 
 def show_filter_input_dialog():
     """Show a simple filter input dialog using Rich Prompt"""
-    global group_filter_pattern, show_filter_dialog
+    global group_filter_pattern, show_filter_dialog, force_refresh
 
     # Get current filter pattern for display
     current_filter = (group_filter_pattern.pattern
@@ -136,11 +136,13 @@ def show_filter_input_dialog():
             try:
                 group_filter_pattern = re.compile(user_input.strip())
                 add_warning(f"Applied filter: {user_input.strip()}")
+                force_refresh = True  # Force immediate data refresh
             except re.error as e:
                 add_warning(f"Invalid regex pattern: {e}")
         else:
             group_filter_pattern = None
             add_warning("Cleared group filter")
+            force_refresh = True  # Force immediate data refresh
             
     except (EOFError, KeyboardInterrupt):
         # User cancelled with Ctrl+C or EOF
