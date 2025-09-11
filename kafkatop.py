@@ -54,6 +54,7 @@ group_filter_pattern = None
 show_filter_dialog = False  # Flag to show filter input dialog
 warnings = []  # Store warnings to display in the top panel
 terminal_resized = False  # Flag to indicate terminal resize
+show_warnings_panel = False  # Flag to show/hide warnings panel
 
 def add_warning(message):
     """Add a warning message to be displayed in the top panel"""
@@ -64,9 +65,9 @@ def add_warning(message):
         warnings = warnings[-10:]
 
 def get_warnings_panel():
-    """Create a panel with current warnings - only visible when there are warnings"""
-    global warnings
-    if not warnings:
+    """Create a panel with current warnings - only visible when enabled and there are warnings"""
+    global warnings, show_warnings_panel
+    if not show_warnings_panel or not warnings:
         return None
     
     # Get terminal size for dynamic height calculation
@@ -181,7 +182,7 @@ def handle_keypress():
     """
     Runs in a separate thread, waiting for keyboard input.
     """
-    global stop_program, sort_key, sort_reverse, force_refresh, show_filter_dialog
+    global stop_program, sort_key, sort_reverse, force_refresh, show_filter_dialog, show_warnings_panel
     while not stop_program:
         try:
             # Skip keyboard input if filter dialog is active
@@ -198,6 +199,10 @@ def handle_keypress():
                 # Trigger filter input dialog
                 show_filter_dialog = True
                 force_refresh = True  # This will be handled in the main loop
+            elif key == 'w':
+                # Toggle warnings panel visibility
+                show_warnings_panel = not show_warnings_panel
+                force_refresh = True  # Trigger immediate refresh
             elif key in ['g', 'o', 'p', 't', 'l', 'c']:
                 new_sort_key = None
                 if key == 'g':
@@ -712,7 +717,7 @@ def lag_show_rich(params, args):
         legend_text = (f"[bold cyan]{time_str}[/] poll: {iteration} | "
                        f"legend: [cyan]INFO[/] [green]OK[/] [yellow]WARN[/] "
                        f"[magenta]ERR[/] [red]CRIT[/] | keys: [green]Q[/green]uit, "
-                       f"[green]F[/green]ilter, sort-by: [green]G[/green]roup, "
+                       f"[green]F[/green]ilter, [green]W[/green]arnings, sort-by: [green]G[/green]roup, "
                        f"T[green]o[/green]pic, [green]P[/green]artitions, "
                        f"[green]T[/green]ime Left, [green]L[/green]ag, "
                        f"[green]C[/green]onsumed")
