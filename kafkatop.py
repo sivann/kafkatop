@@ -724,8 +724,7 @@ def lag_show_rich(params, args):
         # Create legend text with poll info
         time_str = datetime.datetime.now().strftime("%H:%M:%S")
         legend_text = (f"[bold cyan]{time_str}[/] poll: {iteration} | "
-                       f"legend: [cyan]INFO[/] [green]OK[/] [yellow]WARN[/] "
-                       f"[magenta]ERR[/] [red]CRIT[/] | keys: [green]Q[/green]uit, "
+                       f"actions: [green]Q[/green]uit, "
                        f"[green]F[/green]ilter, [green]W[/green]arnings, sort-by: [green]G[/green]roup, "
                        f"T[green]o[/green]pic, [green]P[/green]artitions, "
                        f"[green]T[/green]ime Left, [green]L[/green]ag, "
