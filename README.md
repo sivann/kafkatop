@@ -30,7 +30,7 @@ pip install kafkatop
 ```
 
 
-**Install inside a virtualenv (recommended practice to avoid polluting system):**
+**Install inside a virtualenv (recommended practice):**
 
 ```
 python3 -m venv virtual_env # this will create a 'virtual_env' directory
