@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kafkatop"
 readme = "README.md"
-version = "1.14"
+version = "1.15"
 description = "A real-time monitoring tool for Apache Kafka that displays consumer lag and event rates"
 authors = [
     {name = "Spiros Ioannou"},

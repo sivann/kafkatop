@@ -42,8 +42,9 @@ from rich.text import Text
 from rich.align import Align
 from rich.console import Group
 from rich.prompt import Prompt
+from rich.spinner import Spinner
 
-VERSION='1.14-13-g3f4da5f'
+VERSION='1.15'
 
 # Global variables for keyboard handling
 stop_program = False
@@ -538,11 +539,17 @@ def calc_rate(kd1, kd2):
 def lag_show_text(params):
     a = params['a']
     kd = calc_lag(a, params)
+    
+    # Print header for initial lag summary
+    print("=" * 120)
+    print(f"{'Group':<45} {'Topic':<20} {'Partitions':<12} {'State':<30} {'LAG min':<10} {'LAG max':<10} {'LAG median':<12}")
+    print("=" * 120)
+    
     for g in kd['group_lags']:
         state = kd['consumer_groups']['properties'][g]['state']
         for t in kd['group_lags'][g]:
             parts_total = topic_nparts(params, t)
-            print(f"Group: {g:<45}, topic: {t:20}, partitions:{len(kd['group_lags'][g][t]['partlags'].keys()):5}/{parts_total:5}, State: {state:30}, LAG min: {kd['group_lags'][g][t]['min']:10.1f}, max: {kd['group_lags'][g][t]['max']:10.1f}, median: {kd['group_lags'][g][t]['median']}")
+            print(f"{g:<45} {t:<20} {len(kd['group_lags'][g][t]['partlags'].keys()):5}/{parts_total:<5} {state:<30} {kd['group_lags'][g][t]['min']:<10.1f} {kd['group_lags'][g][t]['max']:<10.1f} {kd['group_lags'][g][t]['median']:<12.1f}")
  
     if params['kafka_poll_iterations'] == 0:
         sys.exit(0)
@@ -552,6 +559,11 @@ def lag_show_text(params):
     while True:
         print("")
         iteration += 1
+        
+        # Print header for rate monitoring (on every iteration)
+        print("=" * 120)
+        print(f"{'Group':<45} {'Consumed':<8} {'Time':<6} {'Cons Rate':<12} {'Arr Rate':<12} {'Remaining':<10}")
+        print("=" * 120)
 
         kd2 = calc_lag(a, params)
         rates = calc_rate(kd1, kd2) 
@@ -561,10 +573,7 @@ def lag_show_text(params):
                 if 'events_consumed' not in rates[g][t]:
                     #print(g,':no stats')
                     continue
-                print(f"{g:45} consumed {rates[g][t]['events_consumed']:8} evts in {rates[g][t]['time_delta']:3.1f}s,"
-                f"{rates[g][t]['events_consumption_rate']:10.1f} cons evts/sec,"
-                f"{rates[g][t]['events_arrival_rate']:10.1f} new evts/sec,"
-                f" remaining: {rates[g][t]['rem_hms']:8}")
+                print(f"{g:<45} {rates[g][t]['events_consumed']:<8} {rates[g][t]['time_delta']:<6.1f}s {rates[g][t]['events_consumption_rate']:<12.1f} {rates[g][t]['events_arrival_rate']:<12.1f} {rates[g][t]['rem_hms']:<10}")
         if iteration==params['kafka_poll_iterations'] and params['kafka_poll_iterations']>0:
             sys.exit(0)
         time.sleep(params['kafka_poll_period'])
@@ -899,12 +908,15 @@ def lag_show_rich(params, args):
 
 
     iteration=0
-    print("Please wait, calculating initial rates...")
-    kd1 = calc_lag(a, params)
-    #time.sleep(params['kafka_poll_period'])
-    time.sleep(3) 
-    kd2 = calc_lag(a, params)
-    rates = calc_rate(kd1, kd2) 
+    
+    # Show spinner while calculating initial rates
+    console = Console()
+    with console.status("[bold cyan]Please wait, calculating initial rates...", spinner="dots"):
+        kd1 = calc_lag(a, params)
+        #time.sleep(params['kafka_poll_period'])
+        time.sleep(3) 
+        kd2 = calc_lag(a, params)
+        rates = calc_rate(kd1, kd2) 
 
     # Set up terminal resize signal handler
     signal.signal(signal.SIGWINCH, handle_terminal_resize)
