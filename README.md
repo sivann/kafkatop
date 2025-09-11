@@ -106,7 +106,7 @@ options:
 
 | ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop2.png) |
 |:--:|
-| *In the screenshot above (anonymized topics/groups), the 1st row is highlighted as the ETA to consume all the lag, with the consuming rate of the last period, is > 1 minute. Red rows indicate consumption rate is lower than it should be. Cell colors indicate severity.* |
+| *In the screenshot above (anonymized topics/groups), highlighted rows indicate the ETA to consume all the lag, with the consuming rate of the last period, is > 1 minute. Red cell fonts on the consumption rate  indicate consumption rate is low. Cell colors indicate severity.* |
 
 | ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop3.png) |
 |:--:|
@@ -114,7 +114,7 @@ options:
 
 | ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop4-summary.png) |
 |:--:| 
-| *A summary of (anonymized) groups, topics, partitions, lag and consumer group states. Lag is the median lag of all topic partitions.* |
+| *A summary of (anonymized) groups, topics, partitions, lag and consumer group states. The lag is the median lag accross all topic partitions.* |
 
 
 ## Text output
