@@ -41,6 +41,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.align import Align
 from rich.console import Group
+from rich.prompt import Prompt
 
 VERSION='1.14-13-g3f4da5f'
 
@@ -50,6 +51,7 @@ sort_key = None
 sort_reverse = False
 force_refresh = False
 group_filter_pattern = None
+show_filter_dialog = False  # Flag to show filter input dialog
 warnings = []  # Store warnings to display in the top panel
 terminal_resized = False  # Flag to indicate terminal resize
 
@@ -105,11 +107,50 @@ def clear_old_warnings():
         import shutil
         terminal_height = shutil.get_terminal_size().lines
         max_warnings = max(3, min(10, int(terminal_height * 0.15)))  # 15% of terminal height
-    except:
+    except Exception:
         max_warnings = 5  # fallback
     
     if len(warnings) > max_warnings:
         warnings = warnings[-max_warnings:]
+
+
+def show_filter_input_dialog():
+    """Show a simple filter input dialog using Rich Prompt"""
+    global group_filter_pattern, show_filter_dialog
+
+    # Get current filter pattern for display
+    current_filter = (group_filter_pattern.pattern
+                      if group_filter_pattern else "")
+
+    try:
+        # Use Rich Prompt for input
+        user_input = Prompt.ask(
+            f"[bold cyan]Filter Consumer Groups[/bold cyan]\n"
+            f"Current filter: [yellow]{current_filter if current_filter else '(none)'}[/yellow]\n"
+            f"Enter regex pattern (or empty to clear):",
+            default=""
+        )
+        
+        # Apply the filter
+        if user_input.strip():
+            try:
+                group_filter_pattern = re.compile(user_input.strip())
+                add_warning(f"Applied filter: {user_input.strip()}")
+            except re.error as e:
+                add_warning(f"Invalid regex pattern: {e}")
+        else:
+            group_filter_pattern = None
+            add_warning("Cleared group filter")
+            
+    except (EOFError, KeyboardInterrupt):
+        # User cancelled with Ctrl+C or EOF
+        add_warning("Filter input cancelled")
+    except Exception as e:
+        add_warning(f"Error in filter input: {e}")
+
+    # Reset the dialog flag
+    show_filter_dialog = False
+
 
 def show_final_state(iteration, kd, rates, console, generate_table_func, wait_for_input=True):
     """Show final state before exiting"""
@@ -138,14 +179,23 @@ def handle_keypress():
     """
     Runs in a separate thread, waiting for keyboard input.
     """
-    global stop_program, sort_key, sort_reverse, force_refresh
+    global stop_program, sort_key, sort_reverse, force_refresh, show_filter_dialog
     while not stop_program:
         try:
+            # Skip keyboard input if filter dialog is active
+            if show_filter_dialog:
+                time.sleep(0.1)  # Short sleep to avoid busy waiting
+                continue
+                
             # This will block until a key is pressed
             key = readchar.readkey().lower()
             
             if key == 'q':
                 stop_program = True
+            elif key == 'f':
+                # Trigger filter input dialog
+                show_filter_dialog = True
+                force_refresh = True  # This will be handled in the main loop
             elif key in ['g', 'o', 'p', 't', 'l', 'c']:
                 new_sort_key = None
                 if key == 'g':
@@ -222,6 +272,7 @@ def list_topics(params, topic_name=None):
         a: AdminClient instance
 """
 def list_consumer_groups(a, params):
+    global group_filter_pattern
     consumer_groups={'ids':[], 'properties':{}}
     # states: https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html#confluent_kafka.ConsumerGroupState
     s=[]
@@ -232,8 +283,10 @@ def list_consumer_groups(a, params):
         #print("{} consumer groups".format(len(list_consumer_groups_result.valid)))
         for valid in list_consumer_groups_result.valid:
             #print("GROUP id: {} is_simple: {} state: {}".format(valid.group_id, valid.is_simple_consumer_group, valid.state))
-            if params['kafka_group_filter_pattern']:
-                if not re.search(params['kafka_group_filter_pattern'], valid.group_id):
+            # Use global filter pattern if set, otherwise use params
+            current_filter = group_filter_pattern if group_filter_pattern else params['kafka_group_filter_pattern']
+            if current_filter:
+                if not re.search(current_filter, valid.group_id):
                     continue
             if params['kafka_group_exclude_pattern'] and re.search(params['kafka_group_exclude_pattern'], valid.group_id):
                 continue
@@ -246,8 +299,14 @@ def list_consumer_groups(a, params):
 
         #print("{} errors".format(len(list_consumer_groups_result.errors)))
         if len(consumer_groups['ids']) == 0:
-            print("No consumer groups found, try altering --group-exclude-pattern or --group-include-pattern, check defaults",file=sys.stderr)
-            sys.exit(1)
+            # Check if this is due to a runtime filter
+            if group_filter_pattern:
+                add_warning(f"No groups match filter: {group_filter_pattern.pattern}")
+                # Return empty result instead of exiting
+                return consumer_groups
+            else:
+                print("No consumer groups found, try altering --group-exclude-pattern or --group-include-pattern, check defaults",file=sys.stderr)
+                sys.exit(1)
 
         for error in list_consumer_groups_result.errors:
             print("    error: {}".format(error))
@@ -582,7 +641,7 @@ def show_summary_json(params):
  
 
 def lag_show_rich(params, args):
-    global stop_program, force_refresh, terminal_resized
+    global stop_program, force_refresh, terminal_resized, show_filter_dialog
     
     # Save original terminal state for restoration
     original_termios = None
@@ -628,15 +687,32 @@ def lag_show_rich(params, args):
         sys.exit(0)
 
     def generate_table(iteration, kd, rates):
-        global sort_key, sort_reverse
-        dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        global sort_key, sort_reverse, show_filter_dialog
+        
+        # Check if we need to show filter input
+        if show_filter_dialog:
+            show_filter_input_dialog()
+            return None  # Return None to skip this update
         
         # Create legend text with poll info
         time_str = datetime.datetime.now().strftime("%H:%M:%S")
-        legend_text = f"[bold cyan]{time_str}[/] period: {params['kafka_poll_period']}s poll: {iteration} | legend: [cyan]INFO[/] [green]OK[/] [yellow]WARN[/] [magenta]ERR[/] [red]CRIT[/] | keys: [green]Q[/green]uit, sort-by: [green]G[/green]roup, T[green]o[/green]pic, [green]P[/green]artitions, [green]T[/green]ime Left, [green]L[/green]ag, [green]C[/green]onsumed"
+        legend_text = (f"[bold cyan]{time_str}[/] poll: {iteration} | "
+                       f"legend: [cyan]INFO[/] [green]OK[/] [yellow]WARN[/] "
+                       f"[magenta]ERR[/] [red]CRIT[/] | keys: [green]Q[/green]uit, "
+                       f"[green]F[/green]ilter, sort-by: [green]G[/green]roup, "
+                       f"T[green]o[/green]pic, [green]P[/green]artitions, "
+                       f"[green]T[/green]ime Left, [green]L[/green]ag, "
+                       f"[green]C[/green]onsumed")
+
+        # Add filter status if active
+        if group_filter_pattern:
+            legend_text += (f" | [yellow]Filter: "
+                           f"{group_filter_pattern.pattern}[/yellow]")
+
         if sort_key:
             direction = "↓" if sort_reverse else "↑"
-            legend_text += f" | Sorted by: [bold]{sort_key}[/] {direction} (press again to reverse)"
+            legend_text += (f" | Sorted by: [bold]{sort_key}[/] "
+                           f"{direction} (press again to reverse)")
         
         # Create table without title
         table = Table(show_lines=False, 
@@ -832,25 +908,23 @@ def lag_show_rich(params, args):
     live = Live(table, refresh_per_second=0.5, screen=True, console=console, 
                 auto_refresh=False)  # Disable auto-refresh to control updates manually
     
-    with live: # Live only works in with..
+    with live:
+        # Main display loop
         while not stop_program:
+            # Update data
             kd2 = calc_lag(a, params)
             rates = calc_rate(kd1, kd2) 
             kd1 = kd2
             iteration += 1
-            clear_old_warnings()  # Clean up old warnings
+            clear_old_warnings()
             
-            # Check for terminal resize and force refresh if needed
-            if terminal_resized:
-                terminal_resized = False
-                # Force a complete refresh of the console
-                console.clear()
-            
-            live.update(generate_table(iteration, kd2, rates))
-            live.refresh()  # Manual refresh for better control
+            # Update display
+            table = generate_table(iteration, kd2, rates)
+            if table is not None:
+                live.update(table)
+                live.refresh()
 
             if iteration==params['kafka_poll_iterations'] and params['kafka_poll_iterations']>0:
-                # Exit the live context first, then show final state
                 break
             
             # Sleep in small chunks to allow immediate quit response and sorting updates
@@ -864,13 +938,15 @@ def lag_show_rich(params, args):
                 if force_refresh or terminal_resized:
                     if terminal_resized:
                         terminal_resized = False
-                        console.clear()  # Clear console on resize
+                        console.clear()
                     if force_refresh:
                         force_refresh = False
-                    live.update(generate_table(iteration, kd2, rates))
-                    live.refresh()  # Manual refresh for sorting updates or resize
-                    break  # Exit the sleep loop to refresh immediately
-    
+                    table = generate_table(iteration, kd2, rates)
+                    if table is not None:
+                        live.update(table)
+                        live.refresh()
+                    break
+
     # Show final state when quitting with 'q' or reaching max iterations
     if stop_program:
         show_final_state(iteration, kd2, rates, console, generate_table, wait_for_input=False)
