@@ -20,7 +20,7 @@
 
 # Installing
 ## PEX binary
-You may download the multi-platform pex file from [releases](https://github.com/sivann/kafkatop/releases). It is an one-file executable, compatible with x86_64 which just needs one of python 3.9-3.13 in your path.
+Download the single-file pex executable from the [releases](https://github.com/sivann/kafkatop/releases)  page. It's compatible with X86 64-bit systems and requires Python 3.9–3.13 in your path.
 
 ## Using pip
 
