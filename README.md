@@ -20,7 +20,7 @@
 
 # Installing
 ## PEX binary
-Download the single-file pex executable from the [releases](https://github.com/sivann/kafkatop/releases)  page. It's compatible with X86 64-bit systems and requires Python 3.9–3.13 in your path.
+Download the single-file [pex](https://github.com/pex-tool/pex)  executable from the [releases](https://github.com/sivann/kafkatop/releases)  page. It's compatible with X86 64-bit systems and requires Python 3.9–3.13 in your path.
 
 ## Using pip
 
@@ -117,7 +117,8 @@ options:
 | *A summary of (anonymized) groups, topics, partitions, lag and consumer group states. The lag is the median lag accross all topic partitions.* |
 
 
-## Text output
+## JSON output
+A machine-parseable json can be produced as well:
 
 ```
 kafkatop --kafka-broker 1.2.3.4  --group-filter-pattern 'GroupName1' --summary-json
