@@ -44,7 +44,7 @@ from rich.console import Group
 from rich.prompt import Prompt
 from rich.spinner import Spinner
 
-VERSION='1.15'
+VERSION='1.16'
 
 # Global variables for keyboard handling
 stop_program = False
