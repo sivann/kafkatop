@@ -50,9 +50,12 @@ pex: $(VENV_DIR)
 pex-mp:
 	./make-pex-mp.sh
 
+# Build for pypi repo (after tagging)
 build: $(VENV_DIR)
 	$(VENV_DIR)/bin/pip install build
 	$(VENV_DIR)/bin/python -m build
 
+# Publish for pypi repo (after tagging)
 publish: $(VENV_DIR) build
 	$(VENV_DIR)/bin/twine upload dist/*
+
