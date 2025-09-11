@@ -23,14 +23,14 @@ You may download the multi-platform pex file from [releases](https://github.com/
 
 ## Using pip
 
-You may install with pip:
+**Install with pip:**
 
 ```
 pip install kafkatop
 ```
 
 
-Install inside a virtualenv (recommended practice to avoid polluting system):
+**Install inside a virtualenv (recommended practice to avoid polluting system):**
 
 ```
 python3 -m venv virtual_env # this will create a 'virtual_env' directory
