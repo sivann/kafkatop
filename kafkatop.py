@@ -382,6 +382,17 @@ def calc_lag(a, params):
     # Consumer groups and offsets
     kd['consumer_groups'] = list_consumer_groups(a, params)
 
+    # Check if no consumer groups found (e.g., due to filter)
+    if not kd['consumer_groups']['ids']:
+        # Return empty data structure
+        kd['group_offsets'] = {}
+        kd['group_offsets_ts'] = time.time()
+        kd['topics_with_groups'] = {}
+        kd['topic_offsets'] = {}
+        kd['topic_offsets_ts'] = time.time()
+        kd['group_lags'] = {}
+        return kd
+
     # Topics assigned to each Consumer group
     consumer_group_topics = describe_consumer_groups(a, kd['consumer_groups']['ids'])
 
