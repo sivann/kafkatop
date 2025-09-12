@@ -36,6 +36,7 @@ pip install kafkatop
 ```
 python3 -m venv virtual_env # this will create a 'virtual_env' directory
 . bin/virtual_env/activate  # 'activate' the virtualenv. Run 'deactivate' to deactivate.
+pip install --upgrade pip   # can produce errors otherwise
 pip install kafkatop        # install kafkatop
 kafkatop                    # run 
 ```
