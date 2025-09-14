@@ -19,8 +19,10 @@
 -   **Metadata Reporting:** Export an overview of consumer and topic metadata (topics, partitions, ISR, leaders) in JSON.
 
 # Installing
-## PEX binary
+## Download the PEX binary
 Download the single-file [pex](https://github.com/pex-tool/pex)  executable from the [releases](https://github.com/sivann/kafkatop/releases)  page. It's compatible with X86 64-bit systems and requires Python 3.9–3.13 in your path.
+
+This is the easiest way to distribute, although startup time might be bit higher.
 
 ## Using pip
 
@@ -61,7 +63,7 @@ kafkatop
 
 ```
 # Port-forward the pod's port locally in another terminal, or in the background:
-timeout kubectl port-forward kafka-0 9092:9092 &
+timeout 1200 kubectl port-forward kafka-0 9092:9092 &
 
 # Run kafkatop on the node
 kafkatop
