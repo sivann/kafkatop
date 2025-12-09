@@ -39,7 +39,7 @@ venv_update: $(VENV_DIR)
 clean: ## >> remove all environment and build files
 	@echo ""
 	@echo "$(ccso)--> Removing virtual environment $(ccend)"
-	rm -rf $(VENV_DIR) makepex.* wh/ venv-*/ platforms.json kafkatop kafkatop.egg-info/ build/ dist/ *.pex  releasebody.md platforms.tmp
+	rm -rf $(VENV_DIR) makepex.* wh/ venv-*/ platforms.json kafkatop kafkatop.egg-info/ build/ dist/ *.pex  releasebody.md platforms.tmp __pycache__
 
 pex: $(VENV_DIR)
 	echo "PYTHON is set to $(PYTHON)" #errors if not set above
