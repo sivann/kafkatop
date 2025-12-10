@@ -45,46 +45,44 @@ func (a *AdminClient) Close() error {
 
 // ListConsumerGroups lists all consumer groups
 func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Params) (map[string]*types.ConsumerGroup, error) {
-	conn, err := kafka.Dial("tcp", a.broker)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to broker: %w", err)
-	}
-	defer conn.Close()
-
-	// Get coordinator
-	controller, err := conn.Controller()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get controller: %w", err)
+	// Use the Client API which has ListGroups
+	client := &kafka.Client{
+		Addr:    kafka.TCP(a.broker),
+		Timeout: 10 * time.Second,
 	}
 
-	coordConn, err := kafka.Dial("tcp", fmt.Sprintf("%s:%d", controller.Host, controller.Port))
+	response, err := client.ListGroups(ctx, &kafka.ListGroupsRequest{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to coordinator: %w", err)
+		return nil, fmt.Errorf("failed to list consumer groups: %w", err)
 	}
-	defer coordConn.Close()
 
 	groups := make(map[string]*types.ConsumerGroup)
 
-	// Note: kafka-go library doesn't provide a direct consumer group listing API
-	// In a production implementation, you would need to:
-	// 1. Use the Kafka wire protocol directly
-	// 2. Or use a different library like sarama
-	// 3. Or maintain a known list of consumer groups
-
-	// Compile filter patterns for future use
 	var filterPattern, excludePattern *regexp.Regexp
 	if params.KafkaGroupFilterPattern != "" {
 		filterPattern = regexp.MustCompile(params.KafkaGroupFilterPattern)
-		_ = filterPattern // TODO: implement filtering when group listing is available
 	}
 	if params.KafkaGroupExcludePattern != "" {
 		excludePattern = regexp.MustCompile(params.KafkaGroupExcludePattern)
-		_ = excludePattern // TODO: implement filtering when group listing is available
 	}
 
-	// For now, we return empty groups which will be caught by the caller
-	// The Python version uses confluent-kafka which wraps librdkafka
-	// which provides this functionality
+	for _, group := range response.Groups {
+		groupID := group.GroupID
+
+		// Apply filters
+		if filterPattern != nil && !filterPattern.MatchString(groupID) {
+			continue
+		}
+		if excludePattern != nil && excludePattern.MatchString(groupID) {
+			continue
+		}
+
+		groups[groupID] = &types.ConsumerGroup{
+			GroupID: groupID,
+			State:   types.StateStable,
+			Topics:  make(map[string][]int32),
+		}
+	}
 
 	return groups, nil
 }
@@ -96,7 +94,7 @@ func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []str
 	for _, groupID := range groupIDs {
 		cg := &types.ConsumerGroup{
 			GroupID: groupID,
-			State:   types.StateUnknown,
+			State:   types.StateStable,
 			Topics:  make(map[string][]int32),
 		}
 
@@ -108,22 +106,18 @@ func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []str
 
 // ListConsumerGroupOffsets lists offsets for a consumer group
 func (a *AdminClient) ListConsumerGroupOffsets(ctx context.Context, groupID string) (*types.ConsumerGroupOffset, error) {
-	conn, err := kafka.Dial("tcp", a.broker)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to broker: %w", err)
-	}
-	defer conn.Close()
-
-	controller, err := conn.Controller()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get controller: %w", err)
+	client := &kafka.Client{
+		Addr:    kafka.TCP(a.broker),
+		Timeout: 10 * time.Second,
 	}
 
-	coordConn, err := kafka.Dial("tcp", fmt.Sprintf("%s:%d", controller.Host, controller.Port))
+	// Use OffsetFetch to get committed offsets for the group
+	response, err := client.OffsetFetch(ctx, &kafka.OffsetFetchRequest{
+		GroupID: groupID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to coordinator: %w", err)
+		return nil, fmt.Errorf("failed to fetch offsets for group %s: %w", groupID, err)
 	}
-	defer coordConn.Close()
 
 	offsets := &types.ConsumerGroupOffset{
 		GroupID:      groupID,
@@ -131,9 +125,14 @@ func (a *AdminClient) ListConsumerGroupOffsets(ctx context.Context, groupID stri
 		Timestamp:    time.Now(),
 	}
 
-	// Note: kafka-go doesn't provide easy consumer group offset fetching
-	// This would need to be implemented using the wire protocol directly
-	// For now, return empty offsets
+	for topic, partitions := range response.Topics {
+		offsets.TopicOffsets[topic] = make(map[int32]int64)
+		for _, partition := range partitions {
+			if partition.CommittedOffset >= 0 {
+				offsets.TopicOffsets[topic][int32(partition.Partition)] = partition.CommittedOffset
+			}
+		}
+	}
 
 	return offsets, nil
 }
@@ -149,7 +148,7 @@ func (a *AdminClient) ListTopicOffsets(ctx context.Context, topic string, partit
 	for _, partition := range partitions {
 		conn, err := kafka.DialLeader(ctx, "tcp", a.broker, topic, int(partition))
 		if err != nil {
-			// Partition may not exist or have no leader
+			// Partition may not exist or have no leader, skip
 			continue
 		}
 
@@ -157,6 +156,7 @@ func (a *AdminClient) ListTopicOffsets(ctx context.Context, topic string, partit
 		conn.Close()
 
 		if err != nil {
+			// Error reading offset, skip this partition
 			continue
 		}
 
@@ -247,23 +247,6 @@ func (a *AdminClient) GetClusterInfo(ctx context.Context) (*types.ClusterInfo, e
 }
 
 // Helper functions
-
-func mapGroupState(state string) types.ConsumerGroupState {
-	switch state {
-	case "Stable":
-		return types.StateStable
-	case "Empty":
-		return types.StateEmpty
-	case "Dead":
-		return types.StateDead
-	case "PreparingRebalance":
-		return types.StatePreparingRebalance
-	case "CompletingRebalance":
-		return types.StateCompletingRebalance
-	default:
-		return types.StateUnknown
-	}
-}
 
 func convertToInt32Slice(brokers []kafka.Broker) []int32 {
 	result := make([]int32, len(brokers))
