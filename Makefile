@@ -25,17 +25,40 @@ ccso = $(shell tput smso)
 #Do not echo commands
 .SILENT:
 
-.PHONY: all init venv_update clean pex pex-mp build publish go go-build go-install go-clean
+.PHONY: all init venv_update clean pex pex-mp build publish go go-build go-install go-clean go-build-all go-build-linux go-build-darwin go-build-windows
 
 all: go ## Build both Python and Go versions
 
 # Go targets
 go: go-build ## Build Go version (default)
 
-go-build: ## Build Go binary with static linking
-	@echo "$(ccso)--> Building Go version $(ccend)"
+go-build: ## Build Go binary with static linking for current platform
+	@echo "$(ccso)--> Building Go version for $(GOOS)/$(GOARCH) $(ccend)"
 	cd go && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags="-s -w" -o ../$(GOBIN) .
 	@echo "$(ccgreen)Go binary built: ./$(GOBIN)$(ccend)"
+
+go-build-all: go-build-linux go-build-darwin go-build-windows ## Build for all platforms (Linux, macOS, Windows)
+
+go-build-linux: ## Build for Linux (amd64 and arm64)
+	@echo "$(ccso)--> Building for Linux amd64 $(ccend)"
+	cd go && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -ldflags="-s -w" -o ../kafkatop-linux-amd64 .
+	@echo "$(ccgreen)Built: kafkatop-linux-amd64$(ccend)"
+	@echo "$(ccso)--> Building for Linux arm64 $(ccend)"
+	cd go && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -ldflags="-s -w" -o ../kafkatop-linux-arm64 .
+	@echo "$(ccgreen)Built: kafkatop-linux-arm64$(ccend)"
+
+go-build-darwin: ## Build for macOS (amd64 and arm64)
+	@echo "$(ccso)--> Building for macOS amd64 (Intel) $(ccend)"
+	cd go && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO) build -ldflags="-s -w" -o ../kafkatop-darwin-amd64 .
+	@echo "$(ccgreen)Built: kafkatop-darwin-amd64$(ccend)"
+	@echo "$(ccso)--> Building for macOS arm64 (Apple Silicon) $(ccend)"
+	cd go && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build -ldflags="-s -w" -o ../kafkatop-darwin-arm64 .
+	@echo "$(ccgreen)Built: kafkatop-darwin-arm64$(ccend)"
+
+go-build-windows: ## Build for Windows (amd64)
+	@echo "$(ccso)--> Building for Windows amd64 $(ccend)"
+	cd go && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build -ldflags="-s -w" -o ../kafkatop-windows-amd64.exe .
+	@echo "$(ccgreen)Built: kafkatop-windows-amd64.exe$(ccend)"
 
 go-install: ## Install Go dependencies
 	@echo "$(ccso)--> Installing Go dependencies $(ccend)"
@@ -44,7 +67,7 @@ go-install: ## Install Go dependencies
 
 go-clean: ## Clean Go build artifacts
 	@echo "$(ccso)--> Cleaning Go build artifacts $(ccend)"
-	rm -f $(GOBIN)
+	rm -f $(GOBIN) kafkatop-* *.exe
 	cd go && $(GO) clean
 
 go-test: ## Run Go tests

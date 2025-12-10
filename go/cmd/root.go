@@ -58,7 +58,10 @@ func init() {
 		"Anonymize topic and group names")
 	rootCmd.Flags().BoolVar(&params.KafkaShowEmptyGroups, "all", false,
 		"Show all groups (including those with no members)")
+
+	// Set version
 	rootCmd.Version = version
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 }
 
 func run(cmd *cobra.Command, args []string) error {
