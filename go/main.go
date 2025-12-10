@@ -71,6 +71,14 @@ func main() {
 		return
 	}
 
+	if params.KafkaSummary {
+		if err := ui.ShowSummary(admin, &params); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if params.KafkaStatus {
 		if err := ui.ShowStatus(admin, &params); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)

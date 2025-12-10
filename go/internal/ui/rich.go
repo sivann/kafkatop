@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dustin/go-humanize"
 	"github.com/sivann/kafkatop/internal/kafka"
 	"github.com/sivann/kafkatop/internal/types"
 )
@@ -40,6 +39,7 @@ type model struct {
 	rates           map[string]map[string]*types.RateStats
 	iteration       int
 	loading         bool
+	loadingStatus   string
 	spinner         spinner.Model
 	table           table.Model
 	sortKey         string
@@ -52,6 +52,9 @@ type model struct {
 	err             error
 	quitting        bool
 	ready           bool
+	width           int
+	height          int
+	pollPeriod      time.Duration
 }
 
 type tickMsg time.Time
@@ -60,6 +63,7 @@ type dataMsg struct {
 	rates map[string]map[string]*types.RateStats
 	err   error
 }
+type statusMsg string
 
 func ShowRich(admin *kafka.AdminClient, params *types.Params) error {
 	s := spinner.New()
@@ -72,15 +76,17 @@ func ShowRich(admin *kafka.AdminClient, params *types.Params) error {
 	ti.Width = 50
 
 	m := model{
-		admin:       admin,
-		params:      params,
-		loading:     true,
-		spinner:     s,
+		admin:      admin,
+		params:     params,
+		loading:    true,
+		spinner:    s,
 		filterInput: ti,
-		warnings:    []string{},
+		warnings:   []string{},
+		pollPeriod: time.Duration(params.KafkaPollPeriod) * time.Second,
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	// Don't use AltScreen so the output remains on quit
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		return err
 	}
@@ -92,7 +98,7 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		loadData(m.admin, m.params),
-		tickCmd(),
+		tickCmd(m.pollPeriod),
 	)
 }
 
@@ -108,13 +114,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKeyPress(msg)
 
 	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		m.ready = true
 		if !m.showFilter {
 			m.updateTable()
 		}
 
+	case statusMsg:
+		m.loadingStatus = string(msg)
+
 	case dataMsg:
 		m.loading = false
+		m.loadingStatus = ""
 		if msg.err != nil {
 			m.err = msg.err
 			m.quitting = true
@@ -132,7 +144,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if !m.quitting {
-			cmds = append(cmds, tickCmd())
+			cmds = append(cmds, tickCmd(m.pollPeriod))
 			if !m.loading && !m.showFilter {
 				m.loading = true
 				cmds = append(cmds, loadData(m.admin, m.params))
@@ -165,7 +177,15 @@ func (m model) View() string {
 	}
 
 	if m.loading && m.kd == nil {
-		return fmt.Sprintf("\n  %s Calculating initial rates...\n", m.spinner.View())
+		status := "Calculating initial rates..."
+		if m.loadingStatus != "" {
+			status = m.loadingStatus
+		}
+		return fmt.Sprintf("\n  %s %s\n", m.spinner.View(), status)
+	}
+
+	if m.loading && m.loadingStatus != "" {
+		return fmt.Sprintf("\n  %s %s\n", m.spinner.View(), m.loadingStatus)
 	}
 
 	if m.showFilter {
@@ -232,7 +252,16 @@ func (m *model) viewMain() string {
 
 	// Table
 	if m.kd != nil && m.rates != nil {
-		b.WriteString(baseStyle.Render(m.table.View()))
+		b.WriteString(m.renderTable())
+
+		// Show loading indicator at bottom if currently loading
+		if m.loading {
+			loadingText := "Refreshing data..."
+			if m.loadingStatus != "" {
+				loadingText = m.loadingStatus
+			}
+			b.WriteString(fmt.Sprintf("\n%s %s", m.spinner.View(), loadingText))
+		}
 	} else {
 		b.WriteString(fmt.Sprintf("\n  %s Loading data...\n", m.spinner.View()))
 	}
@@ -316,49 +345,232 @@ func (m *model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) updateTable() {
-	if m.kd == nil || m.rates == nil {
-		return
-	}
-
-	columns := []table.Column{
-		{Title: "Group", Width: 30},
-		{Title: "Topic", Width: 20},
-		{Title: "Parts", Width: 8},
-		{Title: "Since", Width: 8},
-		{Title: "Consumed", Width: 10},
-		{Title: "New/sec", Width: 10},
-		{Title: "Cons/sec", Width: 10},
-		{Title: "Time Left", Width: 12},
-		{Title: "Lag", Width: 12},
-	}
-
-	rows := m.buildRows()
-	m.sortRows(rows)
-
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(false),
-		table.WithHeight(20),
-	)
-
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		BorderBottom(true).
-		Bold(true)
-	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("57")).
-		Bold(false)
-	t.SetStyles(s)
-
-	m.table = t
+	// We're now using manual rendering in viewMain, so this is just a placeholder
+	// to maintain compatibility with the model structure
 }
 
-func (m *model) buildRows() []table.Row {
-	var rows []table.Row
+type rowData struct {
+	group            string
+	topic            string
+	parts            int
+	since            float64
+	consumed         int64
+	newRate          int64
+	consRate         int64
+	eta              string
+	lag              int64
+	hasIssues        bool
+	etaColor         string
+	rateColor        string
+	lagColor         string
+	sortGroup        string
+	sortTopic        string
+	remainingSec     int64
+	consumptionRate  float64
+}
+
+func (m *model) renderTable() string {
+	rows := m.buildRowData()
+	m.sortRowData(rows)
+
+	// Column widths - matching Python version
+	const (
+		groupWidth    = 35
+		topicWidth    = 25
+		partsWidth    = 6
+		sinceWidth    = 7
+		consumedWidth = 9
+		newRateWidth  = 9
+		consRateWidth = 9
+		etaWidth      = 11
+		lagWidth      = 11
+	)
+
+	var b strings.Builder
+
+	// ANSI color codes for manual coloring
+	green := "\033[1;32m"
+	cyan := "\033[36m"
+	reset := "\033[0m"
+
+	// Build header text (plain text for proper alignment)
+	groupH := "Group"
+	topicH := "Topic"
+	partsH := "Parts"
+	sinceH := "Since"
+	consumedH := "Consumed"
+	newRateH := "New/sec"
+	consRateH := "Cons/sec"
+	etaH := "Time Left"
+	lagH := "Lag"
+
+	// Print header with proper spacing
+	b.WriteString(fmt.Sprintf("%s%-*s %-*s %*s %*s %*s %*s %*s %*s %*s%s\n",
+		green,
+		groupWidth, groupH,
+		topicWidth, topicH,
+		partsWidth, partsH,
+		sinceWidth, sinceH,
+		consumedWidth, consumedH,
+		newRateWidth, newRateH,
+		consRateWidth, consRateH,
+		etaWidth, etaH,
+		lagWidth, lagH,
+		reset))
+
+	// Header underline
+	totalWidth := groupWidth + topicWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + 8
+	b.WriteString(strings.Repeat("─", totalWidth))
+	b.WriteString("\n")
+
+	// Calculate how many rows to show
+	maxRows := m.height - 7
+	if maxRows < 5 {
+		maxRows = 5
+	}
+	if maxRows > len(rows) {
+		maxRows = len(rows)
+	}
+
+	// Render rows
+	for i := 0; i < maxRows && i < len(rows); i++ {
+		row := rows[i]
+
+		// Truncate long names
+		group := row.group
+		if len(group) > groupWidth {
+			group = group[:groupWidth-3] + "..."
+		}
+		topic := row.topic
+		if len(topic) > topicWidth {
+			topic = topic[:topicWidth-3] + "..."
+		}
+
+		// Format values (plain text)
+		partsStr := fmt.Sprintf("%d", row.parts)
+		sinceStr := fmt.Sprintf("%.1fs", row.since)
+		consumedStr := formatNumber(row.consumed)
+		newRateStr := formatNumber(row.newRate)
+		consRateStr := formatNumber(row.consRate)
+		etaStr := row.eta
+		lagStr := formatNumber(row.lag)
+
+		// Get color codes
+		rateColorCode := getColorCode(row.rateColor)
+		etaColorCode := getColorCode(row.etaColor)
+
+		if row.hasIssues {
+			// Dark red background for entire row
+			bgCode := "\033[48;5;52m" // background color 52 (dark red)
+			resetCode := "\033[0m"
+
+			// Build row with background spanning entire width
+			rowText := fmt.Sprintf("%-*s %-*s %*s %*s %*s %*s %*s %*s %*s",
+				groupWidth, group,
+				topicWidth, topic,
+				partsWidth, partsStr,
+				sinceWidth, sinceStr,
+				consumedWidth, consumedStr,
+				newRateWidth, newRateStr,
+				consRateWidth, consRateStr,
+				etaWidth, etaStr,
+				lagWidth, lagStr)
+
+			// Apply background to entire row
+			b.WriteString(bgCode + rowText + resetCode + "\n")
+		} else {
+			// Normal row with colored cells
+			b.WriteString(fmt.Sprintf("%s%-*s%s %s%-*s%s %*s %*s %*s %*s %s%*s%s %s%*s%s %*s\n",
+				cyan, groupWidth, group, reset,
+				cyan, topicWidth, topic, reset,
+				partsWidth, partsStr,
+				sinceWidth, sinceStr,
+				consumedWidth, consumedStr,
+				newRateWidth, newRateStr,
+				rateColorCode, consRateWidth, consRateStr, reset,
+				etaColorCode, etaWidth, etaStr, reset,
+				lagWidth, lagStr))
+		}
+	}
+
+	return b.String()
+}
+
+// getColorCode returns ANSI color code for color name
+func getColorCode(color string) string {
+	switch color {
+	case "green":
+		return "\033[32m"
+	case "yellow":
+		return "\033[33m"
+	case "magenta":
+		return "\033[35m"
+	case "red":
+		return "\033[31m"
+	case "cyan":
+		return "\033[36m"
+	case "white":
+		return "\033[37m"
+	default:
+		return "\033[0m"
+	}
+}
+
+// healthCheck determines the health status and colors for a row
+func healthCheck(lag int64, rate *types.RateStats) (hasIssues bool, etaColor, rateColor, lagColor string) {
+	// Default colors
+	etaColor = "white"
+	rateColor = "green"
+	lagColor = "white"
+	hasIssues = false
+
+	// ETA (Time Left) health check
+	// Python highlights rows ONLY based on ETA status, when rs >= 120 (> 2 minutes)
+	rs := rate.RemainingSec
+	if rs >= 0 && rs < 60 {
+		// OK: ETA < 1 minute
+		etaColor = "green"
+	} else if rs >= 60 && rs < 120 {
+		// OK: ETA < 2 minutes
+		etaColor = "yellow"
+	} else if rs >= 120 && rs < 600 {
+		// WARNING: ETA 2-10 minutes - HIGHLIGHT ROW
+		etaColor = "yellow"
+		hasIssues = true
+	} else if rs >= 600 && rs < 7200 {
+		// ERROR: ETA 10m-2h - HIGHLIGHT ROW
+		etaColor = "magenta"
+		hasIssues = true
+	} else if rs >= 7200 {
+		// CRITICAL: ETA > 2h - HIGHLIGHT ROW
+		etaColor = "red"
+		hasIssues = true
+	} else if rs == -1 {
+		// No consumption - only highlight if there's incoming data or existing lag
+		etaColor = "red"
+		// Only highlight if there's a real problem (data arriving or lag exists)
+		if rate.EventsArrivalRate > 1.0 || lag > 1000 {
+			hasIssues = true
+		}
+	}
+
+	// Rate health check - colors cells but does NOT trigger row highlighting
+	if lag > 0 && rate.EventsConsumptionRate == 0 {
+		// No consumption with lag - color cell red (no row highlight)
+		rateColor = "red"
+	} else if rate.EventsArrivalRate > 5*rate.EventsConsumptionRate {
+		// ERROR: Arrival rate > 5x consumption rate
+		rateColor = "red"
+	} else if rate.EventsArrivalRate > 2*rate.EventsConsumptionRate {
+		// WARNING: Arrival rate > 2x consumption rate
+		rateColor = "yellow"
+	}
+
+	return hasIssues, etaColor, rateColor, lagColor
+}
+
+func (m *model) buildRowData() []*rowData {
+	var rows []*rowData
 
 	for groupID, topicRates := range m.rates {
 		for topic, rate := range topicRates {
@@ -367,9 +579,12 @@ func (m *model) buildRows() []table.Row {
 				continue
 			}
 
+			// Check health status
+			hasIssues, etaColor, rateColor, lagColor := healthCheck(lag.Sum, rate)
+
 			// Apply only-issues filter
 			if m.params.KafkaOnlyIssues {
-				if rate.RemainingSec < 60 {
+				if !hasIssues {
 					continue
 				}
 			}
@@ -382,16 +597,24 @@ func (m *model) buildRows() []table.Row {
 				topicName = fmt.Sprintf("topic %06d", hashString(topic)%1000000)
 			}
 
-			row := table.Row{
-				groupName,
-				topicName,
-				fmt.Sprintf("%d", len(lag.PartitionLags)),
-				fmt.Sprintf("%.1fs", rate.TimeDelta),
-				humanize.Comma(rate.EventsConsumed),
-				humanize.Comma(int64(rate.EventsArrivalRate)),
-				humanize.Comma(int64(rate.EventsConsumptionRate)),
-				rate.RemainingHMS,
-				humanize.Comma(lag.Sum),
+			row := &rowData{
+				group:           groupName,
+				topic:           topicName,
+				parts:           len(lag.PartitionLags),
+				since:           rate.TimeDelta,
+				consumed:        rate.EventsConsumed,
+				newRate:         int64(rate.EventsArrivalRate),
+				consRate:        int64(rate.EventsConsumptionRate),
+				eta:             rate.RemainingHMS,
+				lag:             lag.Sum,
+				hasIssues:       hasIssues,
+				etaColor:        etaColor,
+				rateColor:       rateColor,
+				lagColor:        lagColor,
+				sortGroup:       groupID,
+				sortTopic:       topic,
+				remainingSec:    rate.RemainingSec,
+				consumptionRate: rate.EventsConsumptionRate,
 			}
 
 			rows = append(rows, row)
@@ -401,27 +624,99 @@ func (m *model) buildRows() []table.Row {
 	return rows
 }
 
-func (m *model) sortRows(rows []table.Row) {
+// formatNumber formats numbers in human-readable SI units (K, M, G, etc.)
+func formatNumber(n int64) string {
+	if n < 0 {
+		return fmt.Sprintf("-%s", formatNumber(-n))
+	}
+
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+
+	units := []string{"", "K", "M", "G", "T", "P"}
+	exp := 0
+	val := float64(n)
+
+	for val >= 1000 && exp < len(units)-1 {
+		val /= 1000
+		exp++
+	}
+
+	if val >= 100 {
+		return fmt.Sprintf("%.0f%s", val, units[exp])
+	} else if val >= 10 {
+		return fmt.Sprintf("%.1f%s", val, units[exp])
+	}
+	return fmt.Sprintf("%.2f%s", val, units[exp])
+}
+
+func (m *model) sortRowData(rows []*rowData) {
 	if m.sortKey == "" {
+		// Even without explicit sort, maintain stable order by group+topic
+		sort.SliceStable(rows, func(i, j int) bool {
+			if rows[i].sortGroup != rows[j].sortGroup {
+				return rows[i].sortGroup < rows[j].sortGroup
+			}
+			return rows[i].sortTopic < rows[j].sortTopic
+		})
 		return
 	}
 
-	sort.Slice(rows, func(i, j int) bool {
+	// Use stable sort to maintain order for equal values
+	sort.SliceStable(rows, func(i, j int) bool {
 		var less bool
 
 		switch m.sortKey {
 		case "group":
-			less = rows[i][0] < rows[j][0]
+			less = rows[i].sortGroup < rows[j].sortGroup
+			// Secondary sort by topic if groups are equal
+			if rows[i].sortGroup == rows[j].sortGroup {
+				less = rows[i].sortTopic < rows[j].sortTopic
+			}
 		case "topic":
-			less = rows[i][1] < rows[j][1]
+			less = rows[i].sortTopic < rows[j].sortTopic
+			// Secondary sort by group if topics are equal
+			if rows[i].sortTopic == rows[j].sortTopic {
+				less = rows[i].sortGroup < rows[j].sortGroup
+			}
 		case "partitions":
-			less = rows[i][2] < rows[j][2]
+			less = rows[i].parts < rows[j].parts
+			// Secondary sort by group+topic if parts are equal
+			if rows[i].parts == rows[j].parts {
+				if rows[i].sortGroup != rows[j].sortGroup {
+					less = rows[i].sortGroup < rows[j].sortGroup
+				} else {
+					less = rows[i].sortTopic < rows[j].sortTopic
+				}
+			}
 		case "eta":
-			less = rows[i][7] < rows[j][7]
+			less = rows[i].remainingSec < rows[j].remainingSec
+			if rows[i].remainingSec == rows[j].remainingSec {
+				if rows[i].sortGroup != rows[j].sortGroup {
+					less = rows[i].sortGroup < rows[j].sortGroup
+				} else {
+					less = rows[i].sortTopic < rows[j].sortTopic
+				}
+			}
 		case "lag":
-			less = rows[i][8] < rows[j][8]
+			less = rows[i].lag < rows[j].lag
+			if rows[i].lag == rows[j].lag {
+				if rows[i].sortGroup != rows[j].sortGroup {
+					less = rows[i].sortGroup < rows[j].sortGroup
+				} else {
+					less = rows[i].sortTopic < rows[j].sortTopic
+				}
+			}
 		case "rate":
-			less = rows[i][6] < rows[j][6]
+			less = rows[i].consumptionRate < rows[j].consumptionRate
+			if rows[i].consumptionRate == rows[j].consumptionRate {
+				if rows[i].sortGroup != rows[j].sortGroup {
+					less = rows[i].sortGroup < rows[j].sortGroup
+				} else {
+					less = rows[i].sortTopic < rows[j].sortTopic
+				}
+			}
 		default:
 			return false
 		}
@@ -440,8 +735,8 @@ func (m *model) addWarning(msg string) {
 	}
 }
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(time.Duration(5)*time.Second, func(t time.Time) tea.Msg {
+func tickCmd(pollPeriod time.Duration) tea.Cmd {
+	return tea.Tick(pollPeriod, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
