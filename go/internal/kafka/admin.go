@@ -137,7 +137,7 @@ func (a *AdminClient) ListConsumerGroupOffsets(ctx context.Context, groupID stri
 	return offsets, nil
 }
 
-// ListTopicOffsets lists latest offsets for topic partitions
+// ListTopicOffsets lists latest offsets for topic partitions using batch ListOffsets API
 func (a *AdminClient) ListTopicOffsets(ctx context.Context, topic string, partitions []int32) (*types.TopicOffset, error) {
 	offsets := &types.TopicOffset{
 		Topic:            topic,
@@ -145,22 +145,39 @@ func (a *AdminClient) ListTopicOffsets(ctx context.Context, topic string, partit
 		Timestamp:        time.Now(),
 	}
 
+	// Use the Client API for batch ListOffsets request
+	client := &kafka.Client{
+		Addr:    kafka.TCP(a.broker),
+		Timeout: 10 * time.Second,
+	}
+
+	// Build the request with all partitions at once
+	topics := make(map[string][]kafka.OffsetRequest)
+	offsetRequests := make([]kafka.OffsetRequest, 0, len(partitions))
+
 	for _, partition := range partitions {
-		conn, err := kafka.DialLeader(ctx, "tcp", a.broker, topic, int(partition))
-		if err != nil {
-			// Partition may not exist or have no leader, skip
-			continue
+		offsetRequests = append(offsetRequests, kafka.OffsetRequest{
+			Partition: int(partition),
+			Timestamp: kafka.LastOffset, // -1 for latest offset
+		})
+	}
+	topics[topic] = offsetRequests
+
+	// Single batch request for all partitions
+	response, err := client.ListOffsets(ctx, &kafka.ListOffsetsRequest{
+		Topics: topics,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list offsets for topic %s: %w", topic, err)
+	}
+
+	// Extract offsets from response
+	if topicOffsets, ok := response.Topics[topic]; ok {
+		for _, partOffset := range topicOffsets {
+			if partOffset.Error == nil {
+				offsets.PartitionOffsets[int32(partOffset.Partition)] = partOffset.LastOffset
+			}
 		}
-
-		offset, err := conn.ReadLastOffset()
-		conn.Close()
-
-		if err != nil {
-			// Error reading offset, skip this partition
-			continue
-		}
-
-		offsets.PartitionOffsets[partition] = offset
 	}
 
 	return offsets, nil
