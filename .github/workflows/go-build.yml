@@ -1,0 +1,98 @@
+name: Go Build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  release:
+    types: [created]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Get dependencies
+      working-directory: ./go
+      run: go mod download
+
+    - name: Build
+      working-directory: ./go
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        CGO_ENABLED=0 go build -ldflags="-s -w" -o ../kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
+
+    - name: Test build
+      if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+      run: |
+        ./kafkatop-linux-amd64 --version
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
+
+    - name: Upload release asset
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
+        asset_name: kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
+        asset_content_type: application/octet-stream
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Get dependencies
+      working-directory: ./go
+      run: go mod download
+
+    - name: Run tests
+      working-directory: ./go
+      run: go test -v ./...
+
+    - name: Run go vet
+      working-directory: ./go
+      run: go vet ./...
+
+    - name: Run go fmt
+      working-directory: ./go
+      run: |
+        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          echo "Code is not formatted. Please run 'go fmt ./...'"
+          gofmt -s -l .
+          exit 1
+        fi

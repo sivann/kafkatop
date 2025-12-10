@@ -7,7 +7,12 @@
 ![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop0.png)
 *Anonymized topics and groups*
 
+## 🚀 Status: Go Rewrite in Progress!
 
+We're actively rewriting kafkatop in Go for better performance and easier deployment. Both versions are available:
+
+- **Go version** (🆕 recommended): Static binary, instant startup, works on older systems (CentOS 7+)
+- **Python version** (stable): Original implementation, feature-complete
 
 ## Features
 
@@ -19,12 +24,35 @@
 -   **Metadata Reporting:** Export an overview of consumer and topic metadata (topics, partitions, ISR, leaders) in JSON.
 
 # Installing
-## Download the PEX binary
+
+## Go Version (New - Recommended)
+
+Download the static binary from the [releases](https://github.com/sivann/kafkatop/releases) page. No dependencies required!
+
+```bash
+# Download and run (example for Linux AMD64)
+curl -L https://github.com/sivann/kafkatop/releases/download/vX.X.X/kafkatop-linux-amd64 -o kafkatop
+chmod +x kafkatop
+./kafkatop --kafka-broker localhost:9092
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/sivann/kafkatop.git
+cd kafkatop
+make go-build
+./kafkatop --kafka-broker localhost:9092
+```
+
+## Python Version (Legacy)
+
+### Download the PEX binary
 Download the single-file [pex](https://github.com/pex-tool/pex)  executable from the [releases](https://github.com/sivann/kafkatop/releases)  page. It's compatible with X86 64-bit systems and requires Python 3.9–3.13 in your path.
 
 This is the easiest way to distribute, although startup time might be bit higher.
 
-## Using pip
+### Using pip
 
 **Install with pip:**
 
@@ -40,7 +68,7 @@ python3 -m venv virtual_env # this will create a 'virtual_env' directory
 . bin/virtual_env/activate  # 'activate' the virtualenv. Run 'deactivate' to deactivate.
 pip install --upgrade pip   # can produce errors otherwise
 pip install kafkatop        # install kafkatop
-kafkatop                    # run 
+kafkatop                    # run
 ```
 
 ## Quick Start
@@ -144,23 +172,63 @@ results in:
 ```
 
 # Contributing
+
 ## Building
+
+### Building the Go version (Recommended)
+
+Requirements: Go 1.21+
+
+```bash
+# Clone the repository
+git clone https://github.com/sivann/kafkatop.git
+cd kafkatop
+
+# Build for your current platform
+make go-build
+
+# Or build for specific platforms
+GOOS=linux GOARCH=amd64 make go-build    # Linux
+GOOS=darwin GOARCH=amd64 make go-build   # macOS Intel
+GOOS=darwin GOARCH=arm64 make go-build   # macOS Apple Silicon
+GOOS=windows GOARCH=amd64 make go-build  # Windows
+```
+
+The resulting binary is fully static with no dependencies and will work on older systems like CentOS 7.
+
+### Building the Python version
 
 Requires python >=3.9 in your path
 
-
 1. set the full path of PYTHON at the top of Makefile or add the PYTHON= parameter when calling make
-2. ```make```
+2. ```cd python && make```
 3. ```make pex```
 
-
 ```
+cd python
 make pex
 ```
 This will create a ```kafkatop``` pex executable which will include the python code and library dependencies all in one file. It will need the python3 in the path to run.
 
-### Multiplatform building
+#### Multiplatform building
 If you have multiple python versions on your environment, you can run ```make-pex-mp.sh``` to create a kafkatop binary which includes dependencies for all python versions.
+
+## Repository Structure
+
+```
+kafkatop/
+├── go/                    # Go implementation (new)
+│   ├── cmd/              # CLI command structure
+│   ├── internal/
+│   │   ├── kafka/        # Kafka admin client & lag calculation
+│   │   ├── types/        # Data structures
+│   │   └── ui/           # Output modes (TUI, text, JSON)
+│   └── main.go
+├── python/               # Python implementation (legacy)
+│   ├── kafkatop.py      # Main Python script
+│   └── ...
+└── Makefile             # Build both versions
+```
 
 # License
 This project is licensed under the terms of the MIT license.

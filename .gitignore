@@ -1,8 +1,20 @@
+# Python
 venv
-*.swp
+python/venv
 __pycache__
 *.pex
-kafka-lagstats
-kafkatop
 pexinspect.json
+python/build/
+python/dist/
+python/*.egg-info/
+
+# Go
+kafkatop
+kafkatop-*
+go/kafkatop
+*.exe
+
+# General
+*.swp
 .DS_Store
+kafka-lagstats
