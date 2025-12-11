@@ -91,14 +91,75 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []string) (map[string]*types.ConsumerGroup, error) {
 	groups := make(map[string]*types.ConsumerGroup)
 
+	client := &kafka.Client{
+		Addr:    kafka.TCP(a.broker),
+		Timeout: 10 * time.Second,
+	}
+
+	// Describe each group individually to avoid parsing issues with batch requests
 	for _, groupID := range groupIDs {
-		cg := &types.ConsumerGroup{
-			GroupID: groupID,
-			State:   types.StateStable,
-			Topics:  make(map[string][]int32),
+		resp, err := client.DescribeGroups(ctx, &kafka.DescribeGroupsRequest{
+			GroupIDs: []string{groupID},
+		})
+
+		if err != nil {
+			// Fallback to STABLE if DescribeGroups fails
+			// This can happen with some Kafka versions or network issues
+			groups[groupID] = &types.ConsumerGroup{
+				GroupID: groupID,
+				State:   types.StateStable,
+				Topics:  make(map[string][]int32),
+			}
+			continue
 		}
 
-		groups[groupID] = cg
+		if len(resp.Groups) == 0 {
+			groups[groupID] = &types.ConsumerGroup{
+				GroupID: groupID,
+				State:   types.StateStable,
+				Topics:  make(map[string][]int32),
+			}
+			continue
+		}
+
+		group := resp.Groups[0]
+
+		if group.Error != nil {
+			groups[groupID] = &types.ConsumerGroup{
+				GroupID: groupID,
+				State:   types.StateStable,
+				Topics:  make(map[string][]int32),
+			}
+			continue
+		}
+
+		// Map Kafka group state to our state type
+		state := types.StateUnknown
+		switch group.GroupState {
+		case "Stable":
+			state = types.StateStable
+		case "Empty":
+			state = types.StateEmpty
+		case "PreparingRebalance":
+			state = types.StatePreparingRebalance
+		case "CompletingRebalance":
+			state = types.StateCompletingRebalance
+		case "Dead":
+			state = types.StateDead
+		default:
+			// If no members, consider it empty
+			if len(group.Members) == 0 {
+				state = types.StateEmpty
+			} else {
+				state = types.StateStable
+			}
+		}
+
+		groups[groupID] = &types.ConsumerGroup{
+			GroupID: groupID,
+			State:   state,
+			Topics:  make(map[string][]int32),
+		}
 	}
 
 	return groups, nil

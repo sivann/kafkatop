@@ -17,20 +17,84 @@ func ShowSummary(admin *kafka.AdminClient, params *types.Params) error {
 		return fmt.Errorf("failed to calculate lag: %w", err)
 	}
 
-	// Print header
-	printSeparator()
-	fmt.Printf("%-45s %-20s %-12s %-30s %-10s %-10s %-12s\n",
-		"Consumer Group", "Topic", "Partitions", "State", "LAG min", "LAG max", "LAG median")
-	printSeparator()
+	// ANSI color codes (disabled if text mode)
+	cyan := "\033[36m"
+	green := "\033[32m"
+	red := "\033[31m"
+	reset := "\033[0m"
+	bold := "\033[1m"
+
+	if params.TextMode {
+		cyan = ""
+		green = ""
+		red = ""
+		reset = ""
+		bold = ""
+	}
+
+	// Print title
+	fmt.Printf("\n%s%sInitial Lag Summary%s\n\n", bold, cyan, reset)
+
+	// Column widths
+	const (
+		groupWidth = 45
+		topicWidth = 25
+		partsWidth = 25
+		lagWidth   = 18
+		stateWidth = 30
+	)
+
+	// Print header row 1
+	fmt.Printf("%s%-*s %-*s %*s %*s %-*s%s\n",
+		green,
+		groupWidth, "Consumer Group",
+		topicWidth, "Topic",
+		partsWidth, "Partitions",
+		lagWidth, "Lag (part median)",
+		stateWidth, "Consumer Group State",
+		reset)
+
+	// Print header row 2
+	fmt.Printf("%s%-*s %-*s %*s %*s %-*s%s\n",
+		green,
+		groupWidth, "",
+		topicWidth, "",
+		partsWidth, "(with groups/total)",
+		lagWidth, "",
+		stateWidth, "",
+		reset)
+
+	// Header underline
+	fmt.Println("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
 
 	// Print lag summary for each group
 	for groupID, groupLags := range kd.GroupLags {
 		state := kd.ConsumerGroups[groupID].State
+
+		// Color state based on whether it's empty
+		stateColor := green
+		if state == types.StateEmpty {
+			stateColor = red
+		}
+
 		for topic, lag := range groupLags {
 			partsWithConsumers := len(lag.PartitionLags)
-			fmt.Printf("%-45s %-20s %-12d %-30s %-10d %-10d %-12d\n",
-				groupID, topic, partsWithConsumers, state,
-				lag.Min, lag.Max, lag.Median)
+
+			// Get total partitions for this topic
+			totalParts := partsWithConsumers
+			if topicInfo, exists := kd.TopicsWithGroups[topic]; exists {
+				totalParts = len(topicInfo.Partitions)
+			}
+
+			// Format state like Python: "ConsumerGroupState.EMPTY"
+			stateStr := fmt.Sprintf("ConsumerGroupState.%s", state)
+
+			fmt.Printf("%s%-*s%s %s%-*s%s %*s %*d %s%-*s%s\n",
+				cyan, groupWidth, groupID, reset,
+				cyan, topicWidth, topic, reset,
+				partsWidth, fmt.Sprintf("%d/%d", partsWithConsumers, totalParts),
+				lagWidth, lag.Median,
+				stateColor, stateWidth, stateStr, reset)
 		}
 	}
 
