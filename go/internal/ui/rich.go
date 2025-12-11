@@ -255,13 +255,24 @@ func (m *model) viewMain() string {
 	if m.kd != nil && m.rates != nil {
 		b.WriteString(m.renderTable())
 
-		// Show loading indicator at bottom if currently loading
+		// Combined bottom status line: viewport info + loading status
+		var statusParts []string
+
+		viewportInfo := m.getViewportInfo()
+		if viewportInfo != "" {
+			statusParts = append(statusParts, viewportInfo)
+		}
+
 		if m.loading {
 			loadingText := "Refreshing data..."
 			if m.loadingStatus != "" {
 				loadingText = m.loadingStatus
 			}
-			b.WriteString(fmt.Sprintf("\n%s %s", m.spinner.View(), loadingText))
+			statusParts = append(statusParts, fmt.Sprintf("%s %s", m.spinner.View(), loadingText))
+		}
+
+		if len(statusParts) > 0 {
+			b.WriteString("\n" + strings.Join(statusParts, " | "))
 		}
 	} else {
 		b.WriteString(fmt.Sprintf("\n  %s Loading data...\n", m.spinner.View()))
@@ -387,14 +398,14 @@ func (m *model) renderTable() string {
 
 	// Column widths - matching Python version
 	const (
-		groupWidth    = 35
-		topicWidth    = 25
-		partsWidth    = 6
+		groupWidth    = 45  // Increased for longer group names
+		topicWidth    = 30  // Increased for longer topic names
+		partsWidth    = 10
 		sinceWidth    = 7
 		consumedWidth = 9
 		newRateWidth  = 9
 		consRateWidth = 9
-		etaWidth      = 11
+		etaWidth      = 13
 		lagWidth      = 11
 	)
 
@@ -533,6 +544,38 @@ func (m *model) renderTable() string {
 	}
 
 	return b.String()
+}
+
+func (m *model) getViewportInfo() string {
+	rows := m.buildRowData()
+	maxRows := m.height - 8
+	if maxRows < 5 {
+		maxRows = 5
+	}
+
+	if len(rows) <= maxRows {
+		return ""
+	}
+
+	startRow := m.scrollOffset
+	if startRow >= len(rows) {
+		startRow = len(rows) - 1
+	}
+	if startRow < 0 {
+		startRow = 0
+	}
+
+	endRow := startRow + maxRows
+	if endRow > len(rows) {
+		endRow = len(rows)
+	}
+
+	percentage := int(float64(endRow) / float64(len(rows)) * 100)
+	if percentage > 100 {
+		percentage = 100
+	}
+
+	return fmt.Sprintf("Rows %d-%d of %d [%d%%]", startRow+1, endRow, len(rows), percentage)
 }
 
 // getColorCode returns ANSI color code for color name
