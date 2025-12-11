@@ -55,6 +55,7 @@ type model struct {
 	width           int
 	height          int
 	pollPeriod      time.Duration
+	scrollOffset    int
 }
 
 type tickMsg time.Time
@@ -284,6 +285,16 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showWarnings = !m.showWarnings
 		return m, nil
 
+	case "j", "down":
+		m.scrollOffset++
+		return m, nil
+
+	case "k", "up":
+		if m.scrollOffset > 0 {
+			m.scrollOffset--
+		}
+		return m, nil
+
 	case "g", "o", "p", "t", "l", "c":
 		newSortKey := ""
 		switch msg.String() {
@@ -308,6 +319,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sortReverse = (newSortKey == "eta")
 		}
 
+		m.scrollOffset = 0 // Reset scroll when sorting
 		m.updateTable()
 		return m, nil
 	}
@@ -391,49 +403,76 @@ func (m *model) renderTable() string {
 	// ANSI color codes for manual coloring
 	green := "\033[1;32m"
 	cyan := "\033[36m"
+	yellow := "\033[1;33m"
 	reset := "\033[0m"
 
-	// Build header text (plain text for proper alignment)
-	groupH := "Group"
-	topicH := "Topic"
-	partsH := "Parts"
-	sinceH := "Since"
-	consumedH := "Consumed"
-	newRateH := "New/sec"
-	consRateH := "Cons/sec"
-	etaH := "Time Left"
-	lagH := "Lag"
+	// Build 2-row header matching Python version
+	// Row 1 - top line (only for multi-line headers)
+	row1 := fmt.Sprintf("%-*s %-*s %*s %*s %*s %*s %*s %*s %*s",
+		groupWidth, "",
+		topicWidth, "",
+		partsWidth, "",
+		sinceWidth, "Since",
+		consumedWidth, "Events",
+		newRateWidth, "New topic",
+		consRateWidth, "Consumed",
+		etaWidth, "",
+		lagWidth, "")
 
-	// Print header with proper spacing
-	b.WriteString(fmt.Sprintf("%s%-*s %-*s %*s %*s %*s %*s %*s %*s %*s%s\n",
-		green,
-		groupWidth, groupH,
-		topicWidth, topicH,
-		partsWidth, partsH,
-		sinceWidth, sinceH,
-		consumedWidth, consumedH,
-		newRateWidth, newRateH,
-		consRateWidth, consRateH,
-		etaWidth, etaH,
-		lagWidth, lagH,
-		reset))
+	// Row 2 - bottom line with hotkey highlighting
+	row2Plain := fmt.Sprintf("%-*s %-*s %*s %*s %*s %*s %*s %*s %*s",
+		groupWidth, "Group",
+		topicWidth, "Topic",
+		partsWidth, "Partitions",
+		sinceWidth, "(sec)",
+		consumedWidth, "Consumed",
+		newRateWidth, "evts/sec",
+		consRateWidth, "evts/sec",
+		etaWidth, "Time Left",
+		lagWidth, "Lag")
+
+	// Apply color to hotkey letters: [G]roup, T[o]pic, [P]artitions, [C]onsumed, [T]ime, [L]ag
+	row2Colored := row2Plain
+	row2Colored = strings.Replace(row2Colored, "Group", yellow+"G"+green+"roup", 1)
+	row2Colored = strings.Replace(row2Colored, "Topic", "T"+yellow+"o"+green+"pic", 1)
+	row2Colored = strings.Replace(row2Colored, "Partitions", yellow+"P"+green+"artitions", 1)
+	row2Colored = strings.Replace(row2Colored, "Consumed", yellow+"C"+green+"onsumed", 1)
+	row2Colored = strings.Replace(row2Colored, "Time Left", yellow+"T"+green+"ime Left", 1)
+	row2Colored = strings.Replace(row2Colored, "Lag", yellow+"L"+green+"ag", 1)
+
+	// Print header row 1
+	b.WriteString(green + row1 + reset + "\n")
+
+	// Print header row 2
+	b.WriteString(green + row2Colored + reset + "\n")
 
 	// Header underline
 	totalWidth := groupWidth + topicWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + 8
 	b.WriteString(strings.Repeat("─", totalWidth))
 	b.WriteString("\n")
 
-	// Calculate how many rows to show
-	maxRows := m.height - 7
+	// Calculate how many rows to show with scroll support
+	maxRows := m.height - 8 // Reserve space for 2-row header
 	if maxRows < 5 {
 		maxRows = 5
 	}
-	if maxRows > len(rows) {
-		maxRows = len(rows)
+
+	// Apply scroll offset
+	startRow := m.scrollOffset
+	if startRow >= len(rows) {
+		startRow = len(rows) - 1
+	}
+	if startRow < 0 {
+		startRow = 0
 	}
 
-	// Render rows
-	for i := 0; i < maxRows && i < len(rows); i++ {
+	endRow := startRow + maxRows
+	if endRow > len(rows) {
+		endRow = len(rows)
+	}
+
+	// Render rows with scroll
+	for i := startRow; i < endRow; i++ {
 		row := rows[i]
 
 		// Truncate long names
