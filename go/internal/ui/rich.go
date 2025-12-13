@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +16,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sivann/kafkatop/internal/kafka"
 	"github.com/sivann/kafkatop/internal/types"
+)
+
+// ANSI color codes
+const (
+	colorReset   = "\033[0m"
+	colorGreen   = "\033[32m"
+	colorYellow  = "\033[33m"
+	colorCyan    = "\033[36m"
+	colorRed     = "\033[31m"
+	colorMagenta = "\033[35m"
+	colorWhite   = "\033[37m"
+	colorBold    = "\033[1m"
 )
 
 var (
@@ -219,35 +232,10 @@ func (m *model) viewFilterDialog() string {
 func (m *model) viewMain() string {
 	var b strings.Builder
 
-	// Header
-	timeStr := time.Now().Format("15:04:05")
-	header := fmt.Sprintf("%s poll: %d | actions: [Q]uit, [F]ilter, [W]arnings, sort-by: [G]roup, T[o]pic, [P]artitions, [T]ime Left, [L]ag, [C]onsumed",
-		timeStr, m.iteration)
-
-	if m.filterPattern != "" {
-		header += fmt.Sprintf(" | Filter: %s", m.filterPattern)
-	}
-
-	if m.sortKey != "" {
-		direction := "↑"
-		if m.sortReverse {
-			direction = "↓"
-		}
-		header += fmt.Sprintf(" | Sorted by: %s %s", m.sortKey, direction)
-	}
-
-	b.WriteString(headerStyle.Render(header))
-	b.WriteString("\n\n")
-
-	// Warnings panel
+	// Warnings panel at top if shown
 	if m.showWarnings && len(m.warnings) > 0 {
 		warningText := strings.Join(m.warnings, "\n")
-		warningPanel := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("196")).
-			Padding(0, 1).
-			Render(warningText)
-		b.WriteString(warningPanel)
+		b.WriteString(colorRed + "⚠ Warnings:\n" + warningText + colorReset)
 		b.WriteString("\n\n")
 	}
 
@@ -255,7 +243,26 @@ func (m *model) viewMain() string {
 	if m.kd != nil && m.rates != nil {
 		b.WriteString(m.renderTable())
 
-		// Combined bottom status line: viewport info + loading status
+		// Bottom legend/header line
+		timeStr := time.Now().Format("15:04:05")
+		header := fmt.Sprintf("%s poll: %d | actions: [Q]uit, [F]ilter, [W]arnings, sort-by: [G]roup, T[o]pic, [P]artitions, [T]ime Left, [L]ag, [C]onsumed",
+			timeStr, m.iteration)
+
+		if m.filterPattern != "" {
+			header += fmt.Sprintf(" | Filter: %s", m.filterPattern)
+		}
+
+		if m.sortKey != "" {
+			direction := "↑"
+			if m.sortReverse {
+				direction = "↓"
+			}
+			header += fmt.Sprintf(" | Sorted by: %s %s", m.sortKey, direction)
+		}
+
+		b.WriteString("\n" + colorBold + colorCyan + header + colorReset)
+
+		// Combined status line: viewport info + loading status
 		var statusParts []string
 
 		viewportInfo := m.getViewportInfo()
@@ -667,6 +674,14 @@ func (m *model) buildRowData() []*rowData {
 			// Apply only-issues filter
 			if m.params.KafkaOnlyIssues {
 				if !hasIssues {
+					continue
+				}
+			}
+
+			// Apply runtime filter pattern
+			if m.filterPattern != "" {
+				matched, _ := regexp.MatchString(m.filterPattern, groupID)
+				if !matched {
 					continue
 				}
 			}
