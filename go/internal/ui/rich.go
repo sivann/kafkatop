@@ -87,6 +87,7 @@ type model struct {
 	showDetail      bool
 	detailGroup     string
 	detailTopic     string
+	detailScrollOffset int
 	showHelp        bool
 	followMode      bool
 	showFullNumbers bool
@@ -349,12 +350,12 @@ func (m *model) viewSearchDialog() string {
 	b.WriteString("\n\n")
 	if len(m.searchMatches) > 0 {
 		b.WriteString(fmt.Sprintf("Match %d of %d\n", m.searchMatchIdx+1, len(m.searchMatches)))
-		b.WriteString("Press n/N to navigate, Esc to cancel\n")
+		b.WriteString("Press Enter to apply, n/N to navigate, Esc to cancel\n")
 	} else if m.searchPattern != "" {
 		b.WriteString("No matches found\n")
-		b.WriteString("Press Esc to cancel\n")
+		b.WriteString("Press Enter to apply, Esc to cancel\n")
 	} else {
-		b.WriteString("Press Esc to cancel\n")
+		b.WriteString("Press Enter to apply, Esc to cancel\n")
 	}
 
 	return b.String()
@@ -426,6 +427,18 @@ func (m *model) viewDetail() string {
 		rateStats = &types.RateStats{}
 	}
 
+	// Get partition offsets for more details
+	var groupOffsets map[int32]int64
+	var topicOffsets map[int32]int64
+	if groupOffset, exists := m.kd.GroupOffsets[m.detailGroup]; exists {
+		if topicPartOffsets, exists := groupOffset.TopicOffsets[m.detailTopic]; exists {
+			groupOffsets = topicPartOffsets
+		}
+	}
+	if topicOffset, exists := m.kd.TopicOffsets[m.detailTopic]; exists {
+		topicOffsets = topicOffset.PartitionOffsets
+	}
+
 	b.WriteString("\n")
 	b.WriteString(headerStyle.Render(fmt.Sprintf("Partition Details: %s / %s", m.detailGroup, m.detailTopic)))
 	b.WriteString("\n\n")
@@ -441,9 +454,8 @@ func (m *model) viewDetail() string {
 	b.WriteString(fmt.Sprintf("ETA: %s\n", rateStats.RemainingHMS))
 	b.WriteString("\n")
 
-	b.WriteString("Partition Details:\n")
-	b.WriteString("Partition | Lag\n")
-	b.WriteString("----------|----\n")
+	b.WriteString("Partition | Group Offset | Topic Offset | Lag\n")
+	b.WriteString("----------|--------------|--------------|----\n")
 
 	// Sort partitions for display
 	partitions := make([]int32, 0, len(lagStats.PartitionLags))
@@ -452,9 +464,65 @@ func (m *model) viewDetail() string {
 	}
 	sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
 
-	for _, part := range partitions {
+	// Calculate how many rows to show with scroll support
+	maxRows := m.height - 12 // Reserve space for header and summary
+	if maxRows < 5 {
+		maxRows = 5
+	}
+
+	// Apply scroll offset
+	startIdx := m.detailScrollOffset
+	if startIdx >= len(partitions) {
+		startIdx = len(partitions) - 1
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	// Handle "end" key - scroll to show last partitions
+	if startIdx > len(partitions)-maxRows && len(partitions) > maxRows {
+		startIdx = len(partitions) - maxRows
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		m.detailScrollOffset = startIdx
+	}
+
+	endIdx := startIdx + maxRows
+	if endIdx > len(partitions) {
+		endIdx = len(partitions)
+	}
+
+	// Render partitions with scroll
+	for i := startIdx; i < endIdx; i++ {
+		part := partitions[i]
 		lag := lagStats.PartitionLags[part]
-		b.WriteString(fmt.Sprintf("%9d | %s\n", part, formatNumber(m.showFullNumbers, lag)))
+		
+		groupOffset := int64(0)
+		if groupOffsets != nil {
+			if offset, exists := groupOffsets[part]; exists {
+				groupOffset = offset
+			}
+		}
+		
+		topicOffset := int64(0)
+		if topicOffsets != nil {
+			if offset, exists := topicOffsets[part]; exists {
+				topicOffset = offset
+			}
+		}
+
+		b.WriteString(fmt.Sprintf("%9d | %12s | %12s | %s\n",
+			part,
+			formatNumber(m.showFullNumbers, groupOffset),
+			formatNumber(m.showFullNumbers, topicOffset),
+			formatNumber(m.showFullNumbers, lag)))
+	}
+
+	// Show scroll info
+	if len(partitions) > maxRows {
+		b.WriteString(fmt.Sprintf("\nRows %d-%d of %d partitions | Use ↑↓/JK to scroll, Home/End to jump\n", startIdx+1, endIdx, len(partitions)))
+	} else {
+		b.WriteString(fmt.Sprintf("\n%d partitions total\n", len(partitions)))
 	}
 
 	b.WriteString("\nPress Esc to return\n")
@@ -514,7 +582,7 @@ func (m *model) viewMain() string {
 		header2 += colorBrightWhite + formatLegendHotkey("[L]ag", "L", "lag") + ", "
 		header2 += colorBrightWhite + formatLegendHotkey("[N]ew topic", "N", "newrate") + ", "
 		header2 += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate")
-		header2 += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑↓" + colorBrightWhite + "/" + colorBrightGreen + "JK"
+		header2 += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑↓" + colorBrightWhite + "/" + colorBrightGreen + "JK" + colorBrightWhite + "/PgUp/PgDn"
 		header2 += colorBrightWhite + " | " + colorBrightGreen + "Space" + colorBrightWhite + " pause"
 		header2 += colorBrightWhite + " | " + colorBrightGreen + "+/-" + colorBrightWhite + " rate"
 
@@ -676,6 +744,51 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "pgdown":
+		// Page down - scroll by page size
+		rows := m.buildRowData()
+		m.sortRowData(rows)
+		maxRows := m.height - 8
+		if maxRows < 5 {
+			maxRows = 5
+		}
+		m.scrollOffset += maxRows
+		if m.scrollOffset >= len(rows) {
+			m.scrollOffset = len(rows) - 1
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+		}
+		// Update selected row index
+		if m.selectedRowIdx < len(rows)-1 {
+			m.selectedRowIdx += maxRows
+			if m.selectedRowIdx >= len(rows) {
+				m.selectedRowIdx = len(rows) - 1
+			}
+		}
+		return m, nil
+
+	case "pgup":
+		// Page up - scroll by page size
+		rows := m.buildRowData()
+		m.sortRowData(rows)
+		maxRows := m.height - 8
+		if maxRows < 5 {
+			maxRows = 5
+		}
+		m.scrollOffset -= maxRows
+		if m.scrollOffset < 0 {
+			m.scrollOffset = 0
+		}
+		// Update selected row index
+		if m.selectedRowIdx > 0 {
+			m.selectedRowIdx -= maxRows
+			if m.selectedRowIdx < 0 {
+				m.selectedRowIdx = 0
+			}
+		}
+		return m, nil
+
 	case "u":
 		// Toggle full numbers
 		m.showFullNumbers = !m.showFullNumbers
@@ -691,7 +804,47 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "g", "G", "o", "O", "p", "P", "t", "T", "l", "L", "c", "C", "n", "N":
+	case "n":
+		// Navigate to next search match (if search is active), otherwise sort by newrate
+		if m.searchPattern != "" && len(m.searchMatches) > 0 {
+			m.searchMatchIdx = (m.searchMatchIdx + 1) % len(m.searchMatches)
+			m.scrollToMatch()
+			return m, nil
+		}
+		// Fall through to sorting
+		newSortKey := "newrate"
+		if m.sortKey == newSortKey {
+			m.sortReverse = !m.sortReverse
+		} else {
+			m.sortKey = newSortKey
+			m.sortReverse = false
+		}
+		m.scrollOffset = 0
+		m.selectedRowIdx = 0
+		m.updateTable()
+		return m, nil
+
+	case "N":
+		// Navigate to previous search match (if search is active), otherwise sort by newrate
+		if m.searchPattern != "" && len(m.searchMatches) > 0 {
+			m.searchMatchIdx = (m.searchMatchIdx - 1 + len(m.searchMatches)) % len(m.searchMatches)
+			m.scrollToMatch()
+			return m, nil
+		}
+		// Fall through to sorting
+		newSortKey := "newrate"
+		if m.sortKey == newSortKey {
+			m.sortReverse = !m.sortReverse
+		} else {
+			m.sortKey = newSortKey
+			m.sortReverse = false
+		}
+		m.scrollOffset = 0
+		m.selectedRowIdx = 0
+		m.updateTable()
+		return m, nil
+
+	case "g", "G", "o", "O", "p", "P", "t", "T", "l", "L", "c", "C":
 		newSortKey := ""
 		switch msg.String() {
 		case "g", "G":
@@ -859,6 +1012,42 @@ func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showDetail = false
 		m.detailGroup = ""
 		m.detailTopic = ""
+		m.detailScrollOffset = 0
+		return m, nil
+	case "j", "down":
+		m.detailScrollOffset++
+		return m, nil
+	case "k", "up":
+		if m.detailScrollOffset > 0 {
+			m.detailScrollOffset--
+		}
+		return m, nil
+	case "pgdown":
+		// Page down in detail view
+		maxRows := m.height - 12
+		if maxRows < 5 {
+			maxRows = 5
+		}
+		m.detailScrollOffset += maxRows
+		return m, nil
+	case "pgup":
+		// Page up in detail view
+		maxRows := m.height - 12
+		if maxRows < 5 {
+			maxRows = 5
+		}
+		m.detailScrollOffset -= maxRows
+		if m.detailScrollOffset < 0 {
+			m.detailScrollOffset = 0
+		}
+		return m, nil
+	case "home":
+		m.detailScrollOffset = 0
+		return m, nil
+	case "end":
+		// Scroll to end - will be calculated in viewDetail based on partition count
+		// Set a large value, viewDetail will clamp it
+		m.detailScrollOffset = 999999
 		return m, nil
 	}
 	return m, nil
@@ -935,6 +1124,7 @@ func (m *model) renderTable() string {
 
 	// Column widths - matching Python version
 	const (
+		indicatorWidth = 2   // Indicator column for selected row
 		groupWidth    = 45  // Increased for longer group names
 		topicWidth    = 30  // Increased for longer topic names
 		partsWidth    = 10
@@ -1008,7 +1198,8 @@ func (m *model) renderTable() string {
 		newRateTopCol = strings.Replace(newRateTopPlain, "New topic", brightWhite+green+"N"+brightWhite+"ew topic"+reset, 1)
 	}
 	
-	row1 := fmt.Sprintf("%-*s %-*s %*s %*s %*s %s %s %*s %*s",
+	row1 := fmt.Sprintf("%-*s %-*s %-*s %*s %*s %*s %s %s %*s %*s",
+		indicatorWidth, "",
 		groupWidth, "",
 		topicWidth, "",
 		partsWidth, "",
@@ -1043,7 +1234,8 @@ func (m *model) renderTable() string {
 	etaCol := formatHeaderCol("Time Left", "T", "eta", etaWidth, false)
 	lagCol := formatHeaderCol("Lag", "L", "lag", lagWidth, false)
 
-	row2 := groupCol + " " + topicCol + " " + partsCol + " " + sinceCol + " " + consumedTotalCol + " " + newRateCol + " " + consumedRateCol + " " + etaCol + " " + lagCol
+	indicatorCol := fmt.Sprintf("%-*s", indicatorWidth, "")
+	row2 := indicatorCol + " " + groupCol + " " + topicCol + " " + partsCol + " " + sinceCol + " " + consumedTotalCol + " " + newRateCol + " " + consumedRateCol + " " + etaCol + " " + lagCol
 
 	// Print header row 1 (bright white)
 	b.WriteString(brightWhite + row1 + reset + "\n")
@@ -1052,7 +1244,7 @@ func (m *model) renderTable() string {
 	b.WriteString(row2 + "\n")
 
 	// Header underline
-	totalWidth := groupWidth + topicWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + 8
+	totalWidth := indicatorWidth + groupWidth + topicWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + 9
 	b.WriteString(strings.Repeat("─", totalWidth))
 	b.WriteString("\n")
 
@@ -1129,9 +1321,9 @@ func (m *model) renderTable() string {
 		etaStr := row.eta
 		lagStr := formatNumber(m.showFullNumbers, row.lag)
 		
-		// Check if this row matches search (only if search is active)
+		// Check if this row matches search (highlight if search pattern exists, even if dialog is closed)
 		isSearchMatch := false
-		if m.showSearch && len(m.searchMatches) > 0 {
+		if m.searchPattern != "" && len(m.searchMatches) > 0 {
 			for _, matchIdx := range m.searchMatches {
 				if matchIdx == i {
 					isSearchMatch = true
@@ -1139,29 +1331,35 @@ func (m *model) renderTable() string {
 				}
 			}
 		}
-		// Only highlight selected row if user is actively navigating (selectedRowIdx >= 0 and not default)
-		isSelected := (m.selectedRowIdx >= 0 && i == m.selectedRowIdx && (m.searchPattern != "" || len(m.searchMatches) > 0))
+		// Check if this is the selected row (for detail view)
+		isSelected := (m.selectedRowIdx >= 0 && i == m.selectedRowIdx)
 
 		// Get color codes
 		rateColorCode := getColorCode(row.rateColor)
 		etaColorCode := getColorCode(row.etaColor)
 
 		// Determine background color
-		// Priority: issues (red) > search match (green) > selected (blue)
+		// Priority: issues (red) > search match (green)
 		var bgCode string
 		if row.hasIssues {
 			bgCode = "\033[48;5;52m" // Dark red background for issues
 		} else if isSearchMatch {
 			bgCode = "\033[48;5;22m" // Dark green background for search match
-		} else if isSelected {
-			bgCode = "\033[48;5;17m" // Dark blue background for selected (only when searching)
 		} else {
 			bgCode = ""
 		}
 		resetCode := "\033[0m"
 
+		// Indicator column: ">" for selected row, " " for others
+		indicator := " "
+		if isSelected {
+			indicator = ">"
+		}
+		indicatorStr := fmt.Sprintf("%-*s", indicatorWidth, indicator)
+
 		// Build row with background spanning entire width
-		rowText := fmt.Sprintf("%-*s %-*s %*s %*s %*s %*s %*s %*s %*s",
+		rowText := fmt.Sprintf("%s %-*s %-*s %*s %*s %*s %*s %*s %*s %*s %*s",
+			indicatorStr,
 			groupWidth, group,
 			topicWidth, topic,
 			partsWidth, partsStr,
@@ -1177,7 +1375,12 @@ func (m *model) renderTable() string {
 			b.WriteString(bgCode + rowText + resetCode + "\n")
 		} else {
 			// Normal row with colored cells
-			b.WriteString(fmt.Sprintf("%s%-*s%s %s%-*s%s %*s %*s %*s %*s %s%*s%s %s%*s%s %*s\n",
+			indicatorColor := brightWhite
+			if isSelected {
+				indicatorColor = green // Green ">" for selected row
+			}
+			b.WriteString(fmt.Sprintf("%s%s%s %s%-*s%s %s%-*s%s %*s %*s %*s %*s %s%*s%s %s%*s%s %*s\n",
+				indicatorColor, indicatorStr, reset,
 				cyan, groupWidth, group, reset,
 				cyan, topicWidth, topic, reset,
 				partsWidth, partsStr,
