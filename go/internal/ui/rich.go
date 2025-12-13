@@ -88,6 +88,7 @@ type model struct {
 	detailGroup     string
 	detailTopic     string
 	detailScrollOffset int
+	detailPartitionSortByLag bool // Sort partitions by lag+offset in detail view
 	showHelp        bool
 	followMode      bool
 	showFullNumbers bool
@@ -155,7 +156,7 @@ func ShowRich(admin *kafka.AdminClient, params *types.Params) error {
 		pollPeriodIdx:    pollPeriodIdx,
 		lastUpdateTime:   time.Now(),
 		startTime:        time.Now(), // Start time for marquee animation
-		selectedRowIdx:   -1, // Initialize to -1 so no row is selected by default
+		selectedRowIdx:   0, // Initialize to 0 so first row is selected by default
 	}
 
 	// Don't use AltScreen so the output remains on quit
@@ -223,6 +224,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rates = msg.rates
 		m.iteration++
 		m.updateTable()
+
+		// Ensure selectedRowIdx is valid when data first loads
+		if m.selectedRowIdx < 0 {
+			rows := m.buildRowData()
+			if len(rows) > 0 {
+				m.selectedRowIdx = 0
+			}
+		}
 
 		// If timing is enabled, exit after first data load
 		if m.params.TimingOutput != nil {
@@ -384,12 +393,13 @@ func (m *model) viewHelp() string {
 
 	b.WriteString("Navigation:\n")
 	b.WriteString("  ↑/↓, J/K     Scroll up/down\n")
+	b.WriteString("  Space/B      Page down/up\n")
 	b.WriteString("  Home/End     Jump to top/bottom\n")
 	b.WriteString("\n")
 
 	b.WriteString("Actions:\n")
 	b.WriteString("  Q             Quit\n")
-	b.WriteString("  Space         Pause/resume updates\n")
+	b.WriteString("  P             Pause/resume updates\n")
 	b.WriteString("  +/-           Adjust refresh rate\n")
 	b.WriteString("  F             Filter consumer groups\n")
 	b.WriteString("  X             Filter topics\n")
@@ -407,6 +417,11 @@ func (m *model) viewHelp() string {
 	b.WriteString("  L             Sort by Lag\n")
 	b.WriteString("  N             Sort by New topic rate\n")
 	b.WriteString("  C             Sort by Consumed rate\n")
+	b.WriteString("\n")
+
+	b.WriteString("Partition Details:\n")
+	b.WriteString("  S             Sort partitions by lag+offset\n")
+	b.WriteString("  Space/B       Page down/up\n")
 	b.WriteString("\n")
 
 	b.WriteString("Other:\n")
@@ -453,7 +468,83 @@ func (m *model) viewDetail() string {
 		topicOffsets = topicOffset.PartitionOffsets
 	}
 
-	b.WriteString("\n")
+	// Format topic name (handle anonymization if needed)
+	topicName := m.detailTopic
+	if m.params.Anonymize {
+		topicName = fmt.Sprintf("topic %06d", hashString(m.detailTopic)%1000000)
+	}
+
+	// Sort partitions for display
+	partitions := make([]int32, 0, len(lagStats.PartitionLags))
+	for part := range lagStats.PartitionLags {
+		partitions = append(partitions, part)
+	}
+	
+	if m.detailPartitionSortByLag {
+		// Sort by lag+offset (lag first, then offset as tiebreaker)
+		sort.Slice(partitions, func(i, j int) bool {
+			lagI := lagStats.PartitionLags[partitions[i]]
+			lagJ := lagStats.PartitionLags[partitions[j]]
+			
+			// Get offsets for comparison
+			offsetI := int64(0)
+			offsetJ := int64(0)
+			if groupOffsets != nil {
+				if o, exists := groupOffsets[partitions[i]]; exists {
+					offsetI = o
+				}
+			}
+			if groupOffsets != nil {
+				if o, exists := groupOffsets[partitions[j]]; exists {
+					offsetJ = o
+				}
+			}
+			
+			// Sort by lag first, then by offset
+			if lagI != lagJ {
+				return lagI > lagJ // Higher lag first
+			}
+			return offsetI > offsetJ // Higher offset first if lag is equal
+		})
+	} else {
+		// Default: sort by partition number
+		sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
+	}
+
+	// Calculate space allocation - count actual newlines:
+	// Header: title (1) + "\n\n" (2) + Total Lag (1) + Min (1) + Consumption Rate (1) + Arrival Rate (1) + ETA (1) + "\n" (1) + table header (1) + separator (1) = 11 lines
+	// Footer: "\n" (1) + scroll info (1) + "\n" (1) + "Press Esc" (1) = 4 lines  
+	// Total reserved: 15 lines
+	headerLines := 11
+	footerLines := 4
+	maxPartitionRows := m.height - headerLines - footerLines
+	if maxPartitionRows < 1 {
+		maxPartitionRows = 1 // At least show 1 partition row
+	}
+
+	// Apply scroll offset
+	startIdx := m.detailScrollOffset
+	if startIdx >= len(partitions) {
+		startIdx = len(partitions) - 1
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	// Handle "end" key - scroll to show last partitions
+	if startIdx > len(partitions)-maxPartitionRows && len(partitions) > maxPartitionRows {
+		startIdx = len(partitions) - maxPartitionRows
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		m.detailScrollOffset = startIdx
+	}
+
+	endIdx := startIdx + maxPartitionRows
+	if endIdx > len(partitions) {
+		endIdx = len(partitions)
+	}
+
+	// Render header (always visible) - start at top of screen
 	b.WriteString(headerStyle.Render(fmt.Sprintf("Partition Details: %s / %s", m.detailGroup, m.detailTopic)))
 	b.WriteString("\n\n")
 
@@ -468,45 +559,10 @@ func (m *model) viewDetail() string {
 	b.WriteString(fmt.Sprintf("ETA: %s\n", rateStats.RemainingHMS))
 	b.WriteString("\n")
 
-	b.WriteString("Partition | Group Offset | Topic Offset | Lag\n")
-	b.WriteString("----------|--------------|--------------|----\n")
+	b.WriteString("Partition | Topic                    | Group Offset | Topic Offset | Lag\n")
+	b.WriteString("----------|--------------------------|--------------|--------------|----\n")
 
-	// Sort partitions for display
-	partitions := make([]int32, 0, len(lagStats.PartitionLags))
-	for part := range lagStats.PartitionLags {
-		partitions = append(partitions, part)
-	}
-	sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
-
-	// Calculate how many rows to show with scroll support
-	maxRows := m.height - 12 // Reserve space for header and summary
-	if maxRows < 5 {
-		maxRows = 5
-	}
-
-	// Apply scroll offset
-	startIdx := m.detailScrollOffset
-	if startIdx >= len(partitions) {
-		startIdx = len(partitions) - 1
-	}
-	if startIdx < 0 {
-		startIdx = 0
-	}
-	// Handle "end" key - scroll to show last partitions
-	if startIdx > len(partitions)-maxRows && len(partitions) > maxRows {
-		startIdx = len(partitions) - maxRows
-		if startIdx < 0 {
-			startIdx = 0
-		}
-		m.detailScrollOffset = startIdx
-	}
-
-	endIdx := startIdx + maxRows
-	if endIdx > len(partitions) {
-		endIdx = len(partitions)
-	}
-
-	// Render partitions with scroll
+	// Render visible partition rows
 	for i := startIdx; i < endIdx; i++ {
 		part := partitions[i]
 		lag := lagStats.PartitionLags[part]
@@ -525,18 +581,31 @@ func (m *model) viewDetail() string {
 			}
 		}
 
-		b.WriteString(fmt.Sprintf("%9d | %12s | %12s | %s\n",
+		// Truncate topic name if too long (max 24 chars for display)
+		displayTopic := topicName
+		if len(displayTopic) > 24 {
+			displayTopic = displayTopic[:21] + "..."
+		}
+		
+		b.WriteString(fmt.Sprintf("%9d | %-24s | %12s | %12s | %s\n",
 			part,
+			displayTopic,
 			formatNumber(m.showFullNumbers, groupOffset),
 			formatNumber(m.showFullNumbers, topicOffset),
 			formatNumber(m.showFullNumbers, lag)))
 	}
 
-	// Show scroll info
-	if len(partitions) > maxRows {
-		b.WriteString(fmt.Sprintf("\nRows %d-%d of %d partitions | Use ↑↓/JK to scroll, Home/End to jump\n", startIdx+1, endIdx, len(partitions)))
+	// Render footer (always visible)
+	sortHint := ""
+	if m.detailPartitionSortByLag {
+		sortHint = " | [S]orted by lag+offset"
 	} else {
-		b.WriteString(fmt.Sprintf("\n%d partitions total\n", len(partitions)))
+		sortHint = " | [S]ort by lag+offset"
+	}
+	if len(partitions) > maxPartitionRows {
+		b.WriteString(fmt.Sprintf("\nRows %d-%d of %d partitions | Use ↑↓/JK/Space/B to scroll, Home/End to jump%s\n", startIdx+1, endIdx, len(partitions), sortHint))
+	} else {
+		b.WriteString(fmt.Sprintf("\n%d partitions total%s\n", len(partitions), sortHint))
 	}
 
 	b.WriteString("\nPress Esc to return\n")
@@ -591,6 +660,7 @@ func (m *model) viewMain() string {
 		header1 += colorBrightWhite + formatLegendHotkey("[Q]uit", "Q", "") + ", "
 		header1 += colorBrightWhite + formatLegendHotkey("[F]ilter", "F", "") + ", "
 		header1 += colorBrightWhite + formatLegendHotkey("[X]topic filter", "X", "") + ", "
+		header1 += colorBrightWhite + colorBrightGreen + "[Enter]" + colorBrightWhite + "Details, "
 		header1 += colorBrightWhite + formatLegendHotkey("[?]Help", "?", "")
 		
 		if m.filterPattern != "" {
@@ -609,8 +679,8 @@ func (m *model) viewMain() string {
 		header2 += colorBrightWhite + formatLegendHotkey("[L]ag", "L", "lag") + "  "
 		header2 += colorBrightWhite + formatLegendHotkey("[N]ew topic", "N", "newrate") + "  "
 		header2 += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate")
-		header2 += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑↓" + colorBrightWhite + "/" + colorBrightGreen + "JK" + colorBrightWhite + "/PgUp/PgDn"
-		header2 += colorBrightWhite + " | " + colorBrightGreen + "Space" + colorBrightWhite + " pause"
+		header2 += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑↓" + colorBrightWhite + "/" + colorBrightGreen + "JK" + colorBrightWhite + "/" + colorBrightGreen + "Space" + colorBrightWhite + "/" + colorBrightGreen + "B" + colorBrightWhite + "/PgUp/PgDn"
+		header2 += colorBrightWhite + " | " + colorBrightGreen + "P" + colorBrightWhite + " pause"
 		header2 += colorBrightWhite + " | " + colorBrightGreen + "+/-" + colorBrightWhite + " rate"
 
 		if m.sortKey != "" {
@@ -669,13 +739,51 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 
-	case " ":
+	case "p":
 		// Pause/resume updates
 		m.paused = !m.paused
 		if m.paused {
-			m.addWarning("Updates paused - press Space to resume")
+			m.addWarning("Updates paused - press P to resume")
 		} else {
 			m.addWarning("Updates resumed")
+		}
+		return m, nil
+
+	case " ":
+		// Page down in main view
+		rows := m.buildRowData()
+		m.sortRowData(rows)
+		maxRows := m.height - 8
+		if maxRows < 5 {
+			maxRows = 5
+		}
+		// Update selected row index
+		if m.selectedRowIdx < len(rows)-1 {
+			m.selectedRowIdx += maxRows
+			if m.selectedRowIdx >= len(rows) {
+				m.selectedRowIdx = len(rows) - 1
+			}
+			// Adjust scroll offset to keep selected row visible
+			m.scrollToSelectedRow()
+		}
+		return m, nil
+
+	case "b":
+		// Page up in main view
+		rows := m.buildRowData()
+		m.sortRowData(rows)
+		maxRows := m.height - 8
+		if maxRows < 5 {
+			maxRows = 5
+		}
+		// Update selected row index
+		if m.selectedRowIdx > 0 {
+			m.selectedRowIdx -= maxRows
+			if m.selectedRowIdx < 0 {
+				m.selectedRowIdx = 0
+			}
+			// Adjust scroll offset to keep selected row visible
+			m.scrollToSelectedRow()
 		}
 		return m, nil
 
@@ -729,6 +837,8 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showDetail = true
 			m.detailGroup = row.sortGroup
 			m.detailTopic = row.sortTopic
+			m.detailScrollOffset = 0 // Reset scroll to show header
+			m.detailPartitionSortByLag = false // Reset sort to default
 		}
 		return m, nil
 
@@ -754,37 +864,32 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "j", "down":
-		m.scrollOffset++
 		rows := m.buildRowData()
 		m.sortRowData(rows)
 		if m.selectedRowIdx < len(rows)-1 {
 			m.selectedRowIdx++
+			// Adjust scroll offset to keep selected row visible
+			m.scrollToSelectedRow()
 		}
 		return m, nil
 
 	case "k", "up":
-		if m.scrollOffset > 0 {
-			m.scrollOffset--
-		}
+		rows := m.buildRowData()
+		m.sortRowData(rows)
 		if m.selectedRowIdx > 0 {
 			m.selectedRowIdx--
+			// Adjust scroll offset to keep selected row visible
+			m.scrollToSelectedRow()
 		}
 		return m, nil
 
 	case "pgdown":
-		// Page down - scroll by page size
+		// Page down - move selection down by page size
 		rows := m.buildRowData()
 		m.sortRowData(rows)
 		maxRows := m.height - 8
 		if maxRows < 5 {
 			maxRows = 5
-		}
-		m.scrollOffset += maxRows
-		if m.scrollOffset >= len(rows) {
-			m.scrollOffset = len(rows) - 1
-			if m.scrollOffset < 0 {
-				m.scrollOffset = 0
-			}
 		}
 		// Update selected row index
 		if m.selectedRowIdx < len(rows)-1 {
@@ -792,20 +897,18 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.selectedRowIdx >= len(rows) {
 				m.selectedRowIdx = len(rows) - 1
 			}
+			// Adjust scroll offset to keep selected row visible
+			m.scrollToSelectedRow()
 		}
 		return m, nil
 
 	case "pgup":
-		// Page up - scroll by page size
+		// Page up - move selection up by page size
 		rows := m.buildRowData()
 		m.sortRowData(rows)
 		maxRows := m.height - 8
 		if maxRows < 5 {
 			maxRows = 5
-		}
-		m.scrollOffset -= maxRows
-		if m.scrollOffset < 0 {
-			m.scrollOffset = 0
 		}
 		// Update selected row index
 		if m.selectedRowIdx > 0 {
@@ -813,6 +916,8 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.selectedRowIdx < 0 {
 				m.selectedRowIdx = 0
 			}
+			// Adjust scroll offset to keep selected row visible
+			m.scrollToSelectedRow()
 		}
 		return m, nil
 
@@ -871,14 +976,14 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.updateTable()
 		return m, nil
 
-	case "g", "G", "o", "O", "p", "P", "t", "T", "l", "L", "c", "C":
+	case "g", "G", "o", "O", "P", "t", "T", "l", "L", "c", "C":
 		newSortKey := ""
 		switch msg.String() {
 		case "g", "G":
 			newSortKey = "group"
 		case "o", "O":
 			newSortKey = "topic"
-		case "p", "P":
+		case "P":
 			newSortKey = "partitions"
 		case "t", "T":
 			// Both t and T sort by Time Left (ETA)
@@ -1040,6 +1145,7 @@ func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailGroup = ""
 		m.detailTopic = ""
 		m.detailScrollOffset = 0
+		m.detailPartitionSortByLag = false
 		return m, nil
 	case "j", "down":
 		m.detailScrollOffset++
@@ -1049,17 +1155,17 @@ func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailScrollOffset--
 		}
 		return m, nil
-	case "pgdown":
+	case " ", "pgdown":
 		// Page down in detail view
-		maxRows := m.height - 12
+		maxRows := m.height - 15
 		if maxRows < 5 {
 			maxRows = 5
 		}
 		m.detailScrollOffset += maxRows
 		return m, nil
-	case "pgup":
+	case "b", "pgup":
 		// Page up in detail view
-		maxRows := m.height - 12
+		maxRows := m.height - 15
 		if maxRows < 5 {
 			maxRows = 5
 		}
@@ -1067,6 +1173,11 @@ func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.detailScrollOffset < 0 {
 			m.detailScrollOffset = 0
 		}
+		return m, nil
+	case "s":
+		// Toggle sort by lag+offset
+		m.detailPartitionSortByLag = !m.detailPartitionSortByLag
+		m.detailScrollOffset = 0 // Reset scroll when sorting changes
 		return m, nil
 	case "home":
 		m.detailScrollOffset = 0
@@ -1118,6 +1229,26 @@ func (m *model) scrollToMatch() {
 	}
 
 	m.selectedRowIdx = matchIdx
+}
+
+func (m *model) scrollToSelectedRow() {
+	if m.selectedRowIdx < 0 {
+		return
+	}
+
+	maxRows := m.height - 8
+	if maxRows < 5 {
+		maxRows = 5
+	}
+
+	// Scroll to keep selected row visible
+	if m.selectedRowIdx < m.scrollOffset {
+		// Selected row is above viewport - scroll up to show it
+		m.scrollOffset = m.selectedRowIdx
+	} else if m.selectedRowIdx >= m.scrollOffset+maxRows {
+		// Selected row is below viewport - scroll down to show it
+		m.scrollOffset = m.selectedRowIdx - maxRows + 1
+	}
 }
 
 func (m *model) updateTable() {
