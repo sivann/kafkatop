@@ -88,7 +88,7 @@ type model struct {
 	detailGroup     string
 	detailTopic     string
 	detailScrollOffset int
-	detailPartitionSortByLag bool // Sort partitions by lag+offset in detail view
+	detailPartitionSortKey string // Sort partitions: "" = by partition number, "lag" = by lag, "offset" = by offset
 	showHelp        bool
 	followMode      bool
 	showFullNumbers bool
@@ -480,13 +480,21 @@ func (m *model) viewDetail() string {
 		partitions = append(partitions, part)
 	}
 	
-	if m.detailPartitionSortByLag {
-		// Sort by lag+offset (lag first, then offset as tiebreaker)
+	switch m.detailPartitionSortKey {
+	case "lag":
+		// Sort by lag (descending - highest lag first)
 		sort.Slice(partitions, func(i, j int) bool {
 			lagI := lagStats.PartitionLags[partitions[i]]
 			lagJ := lagStats.PartitionLags[partitions[j]]
-			
-			// Get offsets for comparison
+			if lagI != lagJ {
+				return lagI > lagJ // Higher lag first
+			}
+			// Tiebreaker: sort by partition number
+			return partitions[i] < partitions[j]
+		})
+	case "offset":
+		// Sort by offset (descending - highest offset first)
+		sort.Slice(partitions, func(i, j int) bool {
 			offsetI := int64(0)
 			offsetJ := int64(0)
 			if groupOffsets != nil {
@@ -499,14 +507,13 @@ func (m *model) viewDetail() string {
 					offsetJ = o
 				}
 			}
-			
-			// Sort by lag first, then by offset
-			if lagI != lagJ {
-				return lagI > lagJ // Higher lag first
+			if offsetI != offsetJ {
+				return offsetI > offsetJ // Higher offset first
 			}
-			return offsetI > offsetJ // Higher offset first if lag is equal
+			// Tiebreaker: sort by partition number
+			return partitions[i] < partitions[j]
 		})
-	} else {
+	default:
 		// Default: sort by partition number
 		sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
 	}
@@ -597,10 +604,12 @@ func (m *model) viewDetail() string {
 
 	// Render footer (always visible)
 	sortHint := ""
-	if m.detailPartitionSortByLag {
-		sortHint = " | [S]orted by lag+offset"
+	if m.detailPartitionSortKey == "lag" {
+		sortHint = " | [L]ag sorted"
+	} else if m.detailPartitionSortKey == "offset" {
+		sortHint = " | [S]orted by offset"
 	} else {
-		sortHint = " | [S]ort by lag+offset"
+		sortHint = " | [L]ag/[S]ort by offset"
 	}
 	if len(partitions) > maxPartitionRows {
 		b.WriteString(fmt.Sprintf("\nRows %d-%d of %d partitions | Use ↑↓/JK/Space/B to scroll, Home/End to jump%s\n", startIdx+1, endIdx, len(partitions), sortHint))
@@ -835,10 +844,10 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.selectedRowIdx >= 0 && m.selectedRowIdx < len(rows) {
 			row := rows[m.selectedRowIdx]
 			m.showDetail = true
-			m.detailGroup = row.sortGroup
-			m.detailTopic = row.sortTopic
-			m.detailScrollOffset = 0 // Reset scroll to show header
-			m.detailPartitionSortByLag = false // Reset sort to default
+		m.detailGroup = row.sortGroup
+		m.detailTopic = row.sortTopic
+		m.detailScrollOffset = 0 // Reset scroll to show header
+		m.detailPartitionSortKey = "" // Reset sort to default
 		}
 		return m, nil
 
@@ -1145,7 +1154,7 @@ func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailGroup = ""
 		m.detailTopic = ""
 		m.detailScrollOffset = 0
-		m.detailPartitionSortByLag = false
+		m.detailPartitionSortKey = ""
 		return m, nil
 	case "j", "down":
 		m.detailScrollOffset++
@@ -1174,9 +1183,22 @@ func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailScrollOffset = 0
 		}
 		return m, nil
-	case "s":
-		// Toggle sort by lag+offset
-		m.detailPartitionSortByLag = !m.detailPartitionSortByLag
+	case "l", "L":
+		// Sort by lag
+		if m.detailPartitionSortKey == "lag" {
+			m.detailPartitionSortKey = "" // Toggle off
+		} else {
+			m.detailPartitionSortKey = "lag"
+		}
+		m.detailScrollOffset = 0 // Reset scroll when sorting changes
+		return m, nil
+	case "s", "S":
+		// Sort by offset
+		if m.detailPartitionSortKey == "offset" {
+			m.detailPartitionSortKey = "" // Toggle off
+		} else {
+			m.detailPartitionSortKey = "offset"
+		}
 		m.detailScrollOffset = 0 // Reset scroll when sorting changes
 		return m, nil
 	case "home":
