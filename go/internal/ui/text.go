@@ -36,6 +36,11 @@ func ShowText(admin *kafka.AdminClient, params *types.Params) error {
 		}
 	}
 
+	// If timing is enabled, exit after first calculation
+	if params.TimingOutput != nil {
+		return nil
+	}
+
 	if params.KafkaPollIterations == 0 {
 		return nil
 	}

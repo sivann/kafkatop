@@ -116,7 +116,9 @@ type Params struct {
 	KafkaStatus             bool
 	TextMode                bool
 	Anonymize               bool
-	ETACalculationMethod    string // "simple" (old) or "net-rate" (new, accounts for incoming rate)
+	ETACalculationMethod    string      // "simple" (old) or "net-rate" (new, accounts for incoming rate)
+	KafkaMaxConcurrent      int         // Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel)
+	TimingOutput            interface{} // Output for timing/profiling information (io.Writer, nil = disabled)
 }
 
 // ClusterInfo represents Kafka cluster information

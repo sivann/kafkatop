@@ -3,16 +3,32 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"regexp"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/sivann/kafkatop/internal/types"
 )
 
+// TimingStats holds timing information for profiling
+type TimingStats struct {
+	ListConsumerGroups    time.Duration
+	DescribeConsumerGroups time.Duration
+	ListGroupOffsets      time.Duration
+	BuildTopicsMap        time.Duration
+	ListTopicOffsets      time.Duration
+	CalculateLags         time.Duration
+	Total                 time.Duration
+}
+
 // CalcLag calculates lag statistics for all consumer groups
 func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*types.KafkaData, error) {
+	startTime := time.Now()
+	stats := &TimingStats{}
+
 	kd := &types.KafkaData{
 		ConsumerGroups:   make(map[string]*types.ConsumerGroup),
 		GroupOffsets:     make(map[string]*types.ConsumerGroupOffset),
@@ -22,7 +38,9 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 	}
 
 	// List consumer groups
+	t0 := time.Now()
 	groups, err := admin.ListConsumerGroups(ctx, params)
+	stats.ListConsumerGroups = time.Since(t0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list consumer groups: %w", err)
 	}
@@ -40,8 +58,16 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 		groupIDs = append(groupIDs, groupID)
 	}
 
-	// Describe consumer groups to get topic assignments
-	describedGroups, err := admin.DescribeConsumerGroups(ctx, groupIDs)
+	// Determine max concurrent for parallelization
+	maxConcurrent := params.KafkaMaxConcurrent
+	if maxConcurrent <= 0 {
+		maxConcurrent = 1 // Default to sequential if invalid value
+	}
+
+	// Describe consumer groups to get topic assignments (parallelized if configured)
+	t1 := time.Now()
+	describedGroups, err := admin.DescribeConsumerGroups(ctx, groupIDs, maxConcurrent)
+	stats.DescribeConsumerGroups = time.Since(t1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe consumer groups: %w", err)
 	}
@@ -57,18 +83,53 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 
 	kd.ConsumerGroups = groups
 
-	// Get consumer group offsets
-	for groupID := range groups {
-		offsets, err := admin.ListConsumerGroupOffsets(ctx, groupID)
-		if err != nil {
-			// Skip groups with errors
-			continue
+	// Get consumer group offsets (parallelized if configured)
+	t2 := time.Now()
+	if maxConcurrent <= 1 {
+		// Sequential execution
+		for groupID := range groups {
+			offsets, err := admin.ListConsumerGroupOffsetsWithClient(ctx, groupID, nil)
+			if err != nil {
+				// Skip groups with errors
+				continue
+			}
+			kd.GroupOffsets[groupID] = offsets
 		}
-		kd.GroupOffsets[groupID] = offsets
+	} else {
+		// Parallel execution with semaphore
+		semaphore := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+
+		for groupID := range groups {
+			wg.Add(1)
+			go func(gid string) {
+				defer wg.Done()
+				semaphore <- struct{}{} // Acquire semaphore
+				defer func() { <-semaphore }() // Release semaphore
+
+				// Get a client from the pool
+				client := admin.GetClientFromPool()
+				defer admin.ReturnClientToPool(client)
+
+				offsets, err := admin.ListConsumerGroupOffsetsWithClient(ctx, gid, client)
+				if err != nil {
+					// Skip groups with errors
+					return
+				}
+
+				mu.Lock()
+				kd.GroupOffsets[gid] = offsets
+				mu.Unlock()
+			}(groupID)
+		}
+		wg.Wait()
 	}
+	stats.ListGroupOffsets = time.Since(t2)
 	kd.GroupOffsetsTS = time.Now()
 
 	// Build topics with groups map
+	t3 := time.Now()
 	for groupID, offsets := range kd.GroupOffsets {
 		if len(offsets.TopicOffsets) == 0 {
 			continue
@@ -89,19 +150,55 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 			kd.TopicsWithGroups[topic].Groups = append(kd.TopicsWithGroups[topic].Groups, groupID)
 		}
 	}
+	stats.BuildTopicsMap = time.Since(t3)
 
-	// Get topic offsets
-	for topic, topicInfo := range kd.TopicsWithGroups {
-		offsets, err := admin.ListTopicOffsets(ctx, topic, topicInfo.Partitions)
-		if err != nil {
-			// Skip topics with errors
-			continue
+	// Get topic offsets (parallelized if configured)
+	t4 := time.Now()
+	if maxConcurrent <= 1 {
+		// Sequential execution
+		for topic, topicInfo := range kd.TopicsWithGroups {
+			offsets, err := admin.ListTopicOffsetsWithClient(ctx, topic, topicInfo.Partitions, nil)
+			if err != nil {
+				// Skip topics with errors
+				continue
+			}
+			kd.TopicOffsets[topic] = offsets
 		}
-		kd.TopicOffsets[topic] = offsets
+	} else {
+		// Parallel execution with semaphore
+		semaphore := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+
+		for topic, topicInfo := range kd.TopicsWithGroups {
+			wg.Add(1)
+			go func(t string, ti *types.TopicWithGroups) {
+				defer wg.Done()
+				semaphore <- struct{}{} // Acquire semaphore
+				defer func() { <-semaphore }() // Release semaphore
+
+				// Get a client from the pool
+				client := admin.GetClientFromPool()
+				defer admin.ReturnClientToPool(client)
+
+				offsets, err := admin.ListTopicOffsetsWithClient(ctx, t, ti.Partitions, client)
+				if err != nil {
+					// Skip topics with errors
+					return
+				}
+
+				mu.Lock()
+				kd.TopicOffsets[t] = offsets
+				mu.Unlock()
+			}(topic, topicInfo)
+		}
+		wg.Wait()
 	}
+	stats.ListTopicOffsets = time.Since(t4)
 	kd.TopicOffsetsTS = time.Now()
 
 	// Calculate lag statistics
+	t5 := time.Now()
 	for groupID, groupOffsets := range kd.GroupOffsets {
 		if len(groupOffsets.TopicOffsets) == 0 {
 			continue
@@ -150,6 +247,22 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 
 			kd.GroupLags[groupID][topic] = stats
 		}
+	}
+	stats.CalculateLags = time.Since(t5)
+	stats.Total = time.Since(startTime)
+
+	// Print timing stats if enabled
+	if params.TimingOutput != nil {
+		w := params.TimingOutput.(io.Writer)
+		fmt.Fprintf(w, "CalcLag timing (concurrent=%d, params.KafkaMaxConcurrent=%d):\n", maxConcurrent, params.KafkaMaxConcurrent)
+		fmt.Fprintf(w, "  ListConsumerGroups:     %v\n", stats.ListConsumerGroups)
+		fmt.Fprintf(w, "  DescribeConsumerGroups: %v\n", stats.DescribeConsumerGroups)
+		fmt.Fprintf(w, "  ListGroupOffsets:       %v\n", stats.ListGroupOffsets)
+		fmt.Fprintf(w, "  BuildTopicsMap:         %v\n", stats.BuildTopicsMap)
+		fmt.Fprintf(w, "  ListTopicOffsets:       %v\n", stats.ListTopicOffsets)
+		fmt.Fprintf(w, "  CalculateLags:          %v\n", stats.CalculateLags)
+		fmt.Fprintf(w, "  Total:                  %v\n", stats.Total)
+		fmt.Fprintf(w, "\n")
 	}
 
 	return kd, nil

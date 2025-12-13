@@ -3,7 +3,9 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -14,6 +16,8 @@ import (
 type AdminClient struct {
 	broker string
 	conn   *kafka.Conn
+	client *kafka.Client // Shared client for API calls
+	clientPool chan *kafka.Client // Pool of clients for parallel operations
 }
 
 // NewAdminClient creates a new Kafka admin client
@@ -29,9 +33,25 @@ func NewAdminClient(broker string) (*AdminClient, error) {
 		return nil, fmt.Errorf("failed to connect to broker %s: %w", broker, err)
 	}
 
+	// Create a pool of clients for parallel operations
+	// Pool size matches typical maxConcurrent values (default 10, but allow up to 50)
+	poolSize := 50
+	clientPool := make(chan *kafka.Client, poolSize)
+	for i := 0; i < poolSize; i++ {
+		clientPool <- &kafka.Client{
+			Addr:    kafka.TCP(broker),
+			Timeout: 10 * time.Second,
+		}
+	}
+
 	return &AdminClient{
 		broker: broker,
 		conn:   conn,
+		client: &kafka.Client{
+			Addr:    kafka.TCP(broker),
+			Timeout: 10 * time.Second,
+		},
+		clientPool: clientPool,
 	}, nil
 }
 
@@ -43,15 +63,30 @@ func (a *AdminClient) Close() error {
 	return nil
 }
 
+// GetClientFromPool gets a client from the connection pool
+func (a *AdminClient) GetClientFromPool() *kafka.Client {
+	if a.clientPool == nil {
+		// Fallback to shared client if pool not initialized
+		return a.client
+	}
+	return <-a.clientPool
+}
+
+// ReturnClientToPool returns a client to the connection pool
+func (a *AdminClient) ReturnClientToPool(client *kafka.Client) {
+	if a.clientPool != nil {
+		select {
+		case a.clientPool <- client:
+		default:
+			// Pool is full, discard (shouldn't happen)
+		}
+	}
+}
+
 // ListConsumerGroups lists all consumer groups
 func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Params) (map[string]*types.ConsumerGroup, error) {
 	// Use the Client API which has ListGroups
-	client := &kafka.Client{
-		Addr:    kafka.TCP(a.broker),
-		Timeout: 10 * time.Second,
-	}
-
-	response, err := client.ListGroups(ctx, &kafka.ListGroupsRequest{})
+	response, err := a.client.ListGroups(ctx, &kafka.ListGroupsRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list consumer groups: %w", err)
 	}
@@ -88,78 +123,218 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 }
 
 // DescribeConsumerGroups describes consumer groups and returns their topic assignments
-func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []string) (map[string]*types.ConsumerGroup, error) {
+func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []string, maxConcurrent int) (map[string]*types.ConsumerGroup, error) {
 	groups := make(map[string]*types.ConsumerGroup)
 
-	client := &kafka.Client{
-		Addr:    kafka.TCP(a.broker),
-		Timeout: 10 * time.Second,
-	}
-
-	// Describe each group individually to avoid parsing issues with batch requests
-	for _, groupID := range groupIDs {
-		resp, err := client.DescribeGroups(ctx, &kafka.DescribeGroupsRequest{
-			GroupIDs: []string{groupID},
+	if maxConcurrent <= 1 {
+		// Sequential execution - try batching first, fall back to individual if needed
+		// Try to describe all groups in a single batch request
+		batchStart := time.Now()
+		resp, err := a.client.DescribeGroups(ctx, &kafka.DescribeGroupsRequest{
+			GroupIDs: groupIDs,
 		})
-
-		if err != nil {
-			// Fallback to STABLE if DescribeGroups fails
-			// This can happen with some Kafka versions or network issues
-			groups[groupID] = &types.ConsumerGroup{
-				GroupID: groupID,
-				State:   types.StateStable,
-				Topics:  make(map[string][]int32),
+		batchTime := time.Since(batchStart)
+		
+		if err == nil && len(resp.Groups) == len(groupIDs) {
+			// Batch succeeded
+			if len(groupIDs) > 0 {
+				fmt.Fprintf(os.Stderr, "DescribeConsumerGroups: batch succeeded (%d groups in %v)\n", len(groupIDs), batchTime)
 			}
-			continue
-		}
-
-		if len(resp.Groups) == 0 {
-			groups[groupID] = &types.ConsumerGroup{
-				GroupID: groupID,
-				State:   types.StateStable,
-				Topics:  make(map[string][]int32),
+			// Batch request succeeded, process all groups
+			for _, grp := range resp.Groups {
+				groupID := grp.GroupID
+				var group *types.ConsumerGroup
+				
+				if grp.Error != nil {
+					group = &types.ConsumerGroup{
+						GroupID: groupID,
+						State:   types.StateStable,
+						Topics:  make(map[string][]int32),
+					}
+				} else {
+					// Map Kafka group state to our state type
+					state := types.StateUnknown
+					switch grp.GroupState {
+					case "Stable":
+						state = types.StateStable
+					case "Empty":
+						state = types.StateEmpty
+					case "PreparingRebalance":
+						state = types.StatePreparingRebalance
+					case "CompletingRebalance":
+						state = types.StateCompletingRebalance
+					case "Dead":
+						state = types.StateDead
+					default:
+						// If no members, consider it empty
+						if len(grp.Members) == 0 {
+							state = types.StateEmpty
+						} else {
+							state = types.StateStable
+						}
+					}
+					
+					group = &types.ConsumerGroup{
+						GroupID: groupID,
+						State:   state,
+						Topics:  make(map[string][]int32),
+					}
+				}
+				groups[groupID] = group
 			}
-			continue
-		}
-
-		group := resp.Groups[0]
-
-		if group.Error != nil {
-			groups[groupID] = &types.ConsumerGroup{
-				GroupID: groupID,
-				State:   types.StateStable,
-				Topics:  make(map[string][]int32),
+		} else {
+			// Batch request failed or returned no groups, fall back to individual requests
+			if len(groupIDs) > 0 {
+				fmt.Fprintf(os.Stderr, "DescribeConsumerGroups: batch failed (%v), falling back to individual requests (%d groups)\n", err, len(groupIDs))
 			}
-			continue
-		}
+			individualStart := time.Now()
+			for _, groupID := range groupIDs {
+				resp, err := a.client.DescribeGroups(ctx, &kafka.DescribeGroupsRequest{
+					GroupIDs: []string{groupID},
+				})
 
-		// Map Kafka group state to our state type
-		state := types.StateUnknown
-		switch group.GroupState {
-		case "Stable":
-			state = types.StateStable
-		case "Empty":
-			state = types.StateEmpty
-		case "PreparingRebalance":
-			state = types.StatePreparingRebalance
-		case "CompletingRebalance":
-			state = types.StateCompletingRebalance
-		case "Dead":
-			state = types.StateDead
-		default:
-			// If no members, consider it empty
-			if len(group.Members) == 0 {
-				state = types.StateEmpty
-			} else {
-				state = types.StateStable
+				if err != nil {
+					// Fallback to STABLE if DescribeGroups fails
+					// This can happen with some Kafka versions or network issues
+					groups[groupID] = &types.ConsumerGroup{
+						GroupID: groupID,
+						State:   types.StateStable,
+						Topics:  make(map[string][]int32),
+					}
+					continue
+				}
+
+				if len(resp.Groups) == 0 {
+					groups[groupID] = &types.ConsumerGroup{
+						GroupID: groupID,
+						State:   types.StateStable,
+						Topics:  make(map[string][]int32),
+					}
+					continue
+				}
+
+				group := resp.Groups[0]
+
+				if group.Error != nil {
+					groups[groupID] = &types.ConsumerGroup{
+						GroupID: groupID,
+						State:   types.StateStable,
+						Topics:  make(map[string][]int32),
+					}
+					continue
+				}
+
+				// Map Kafka group state to our state type
+				state := types.StateUnknown
+				switch group.GroupState {
+				case "Stable":
+					state = types.StateStable
+				case "Empty":
+					state = types.StateEmpty
+				case "PreparingRebalance":
+					state = types.StatePreparingRebalance
+				case "CompletingRebalance":
+					state = types.StateCompletingRebalance
+				case "Dead":
+					state = types.StateDead
+				default:
+					// If no members, consider it empty
+					if len(group.Members) == 0 {
+						state = types.StateEmpty
+					} else {
+						state = types.StateStable
+					}
+				}
+
+				groups[groupID] = &types.ConsumerGroup{
+					GroupID: groupID,
+					State:   state,
+					Topics:  make(map[string][]int32),
+				}
 			}
+			individualTime := time.Since(individualStart)
+			fmt.Fprintf(os.Stderr, "DescribeConsumerGroups: individual requests took %v (%d groups, avg %v per group)\n", individualTime, len(groupIDs), individualTime/time.Duration(len(groupIDs)))
 		}
+	} else {
+		// Parallel execution - batching doesn't work reliably, use individual parallel requests
+		semaphore := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
 
-		groups[groupID] = &types.ConsumerGroup{
-			GroupID: groupID,
-			State:   state,
-			Topics:  make(map[string][]int32),
+		for _, groupID := range groupIDs {
+			wg.Add(1)
+			go func(gid string) {
+				defer wg.Done()
+				semaphore <- struct{}{} // Acquire semaphore
+				defer func() { <-semaphore }() // Release semaphore
+
+				// Get a client from the pool for this goroutine
+				client := <-a.clientPool
+				defer func() { a.clientPool <- client }() // Return client to pool
+
+				resp, err := client.DescribeGroups(ctx, &kafka.DescribeGroupsRequest{
+					GroupIDs: []string{gid},
+				})
+
+				var group *types.ConsumerGroup
+				if err != nil {
+					// Fallback to STABLE if DescribeGroups fails
+					group = &types.ConsumerGroup{
+						GroupID: gid,
+						State:   types.StateStable,
+						Topics:  make(map[string][]int32),
+					}
+				} else if len(resp.Groups) == 0 {
+					group = &types.ConsumerGroup{
+						GroupID: gid,
+						State:   types.StateStable,
+						Topics:  make(map[string][]int32),
+					}
+				} else {
+					grp := resp.Groups[0]
+					if grp.Error != nil {
+						group = &types.ConsumerGroup{
+							GroupID: gid,
+							State:   types.StateStable,
+							Topics:  make(map[string][]int32),
+						}
+					} else {
+						// Map Kafka group state to our state type
+						state := types.StateUnknown
+						switch grp.GroupState {
+						case "Stable":
+							state = types.StateStable
+						case "Empty":
+							state = types.StateEmpty
+						case "PreparingRebalance":
+							state = types.StatePreparingRebalance
+						case "CompletingRebalance":
+							state = types.StateCompletingRebalance
+						case "Dead":
+							state = types.StateDead
+						default:
+							// If no members, consider it empty
+							if len(grp.Members) == 0 {
+								state = types.StateEmpty
+							} else {
+								state = types.StateStable
+							}
+						}
+
+						group = &types.ConsumerGroup{
+							GroupID: gid,
+							State:   state,
+							Topics:  make(map[string][]int32),
+						}
+					}
+				}
+
+				mu.Lock()
+				groups[gid] = group
+				mu.Unlock()
+			}(groupID)
 		}
+		wg.Wait()
 	}
 
 	return groups, nil
@@ -167,9 +342,14 @@ func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []str
 
 // ListConsumerGroupOffsets lists offsets for a consumer group
 func (a *AdminClient) ListConsumerGroupOffsets(ctx context.Context, groupID string) (*types.ConsumerGroupOffset, error) {
-	client := &kafka.Client{
-		Addr:    kafka.TCP(a.broker),
-		Timeout: 10 * time.Second,
+	return a.ListConsumerGroupOffsetsWithClient(ctx, groupID, nil)
+}
+
+// ListConsumerGroupOffsetsWithClient lists offsets using a specific client (or shared if nil)
+func (a *AdminClient) ListConsumerGroupOffsetsWithClient(ctx context.Context, groupID string, client *kafka.Client) (*types.ConsumerGroupOffset, error) {
+	// Use client from pool if provided, otherwise use shared client
+	if client == nil {
+		client = a.client
 	}
 
 	// Use OffsetFetch to get committed offsets for the group
@@ -200,18 +380,23 @@ func (a *AdminClient) ListConsumerGroupOffsets(ctx context.Context, groupID stri
 
 // ListTopicOffsets lists latest offsets for topic partitions using batch ListOffsets API
 func (a *AdminClient) ListTopicOffsets(ctx context.Context, topic string, partitions []int32) (*types.TopicOffset, error) {
+	return a.ListTopicOffsetsWithClient(ctx, topic, partitions, nil)
+}
+
+// ListTopicOffsetsWithClient lists offsets using a specific client (or shared if nil)
+func (a *AdminClient) ListTopicOffsetsWithClient(ctx context.Context, topic string, partitions []int32, client *kafka.Client) (*types.TopicOffset, error) {
 	offsets := &types.TopicOffset{
 		Topic:            topic,
 		PartitionOffsets: make(map[int32]int64),
 		Timestamp:        time.Now(),
 	}
 
-	// Use the Client API for batch ListOffsets request
-	client := &kafka.Client{
-		Addr:    kafka.TCP(a.broker),
-		Timeout: 10 * time.Second,
+	// Use client from pool if provided, otherwise use shared client
+	if client == nil {
+		client = a.client
 	}
 
+	// Use the Client API for batch ListOffsets request
 	// Build the request with all partitions at once
 	topics := make(map[string][]kafka.OffsetRequest)
 	offsetRequests := make([]kafka.OffsetRequest, 0, len(partitions))

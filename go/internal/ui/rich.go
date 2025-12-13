@@ -224,6 +224,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.iteration++
 		m.updateTable()
 
+		// If timing is enabled, exit after first data load
+		if m.params.TimingOutput != nil {
+			m.quitting = true
+			return m, tea.Quit
+		}
+
 		if m.params.KafkaPollIterations > 0 && m.iteration >= m.params.KafkaPollIterations {
 			m.quitting = true
 			return m, tea.Quit
@@ -562,12 +568,25 @@ func (m *model) viewMain() string {
 			}
 		}
 		
+		// Calculate refresh countdown
+		var refreshCountdown string
+		if m.paused {
+			refreshCountdown = "paused"
+		} else {
+			elapsed := time.Since(m.lastUpdateTime)
+			remaining := m.pollPeriod - elapsed
+			if remaining < 0 {
+				remaining = 0
+			}
+			refreshCountdown = fmt.Sprintf("%.0fs", remaining.Seconds())
+		}
+		
 		// Row 1: Status and actions
 		header1 := colorBrightWhite + fmt.Sprintf("%s poll: %d", timeStr, m.iteration)
 		if m.paused {
 			header1 += colorYellow + " [PAUSED]"
 		}
-		header1 += colorBrightWhite + fmt.Sprintf(" | refresh: %v", m.pollPeriod)
+		header1 += colorBrightWhite + fmt.Sprintf(" | refresh: %s", refreshCountdown)
 		header1 += colorBrightWhite + " | actions: "
 		header1 += colorBrightWhite + formatLegendHotkey("[Q]uit", "Q", "") + ", "
 		header1 += colorBrightWhite + formatLegendHotkey("[F]ilter", "F", "") + ", "
@@ -581,14 +600,14 @@ func (m *model) viewMain() string {
 			header1 += colorBrightWhite + fmt.Sprintf(" | Topic: %s", m.topicFilterPattern)
 		}
 		
-		// Row 2: Sorting and navigation
+		// Row 2: Sorting and navigation - aligned vertically
 		header2 := colorBrightWhite + "sort-by: "
-		header2 += colorBrightWhite + formatLegendHotkey("[G]roup", "G", "group") + ", "
-		header2 += colorBrightWhite + formatLegendHotkey("T[o]pic", "o", "topic") + ", "
-		header2 += colorBrightWhite + formatLegendHotkey("[P]artitions", "P", "partitions") + ", "
-		header2 += colorBrightWhite + formatLegendHotkey("[T]ime Left", "T", "eta") + " (t/T), "
-		header2 += colorBrightWhite + formatLegendHotkey("[L]ag", "L", "lag") + ", "
-		header2 += colorBrightWhite + formatLegendHotkey("[N]ew topic", "N", "newrate") + ", "
+		header2 += colorBrightWhite + formatLegendHotkey("[G]roup", "G", "group") + "  "
+		header2 += colorBrightWhite + formatLegendHotkey("T[o]pic", "o", "topic") + "  "
+		header2 += colorBrightWhite + formatLegendHotkey("[P]artitions", "P", "partitions") + "  "
+		header2 += colorBrightWhite + formatLegendHotkey("[T]ime Left", "T", "eta") + "  "
+		header2 += colorBrightWhite + formatLegendHotkey("[L]ag", "L", "lag") + "  "
+		header2 += colorBrightWhite + formatLegendHotkey("[N]ew topic", "N", "newrate") + "  "
 		header2 += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate")
 		header2 += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑↓" + colorBrightWhite + "/" + colorBrightGreen + "JK" + colorBrightWhite + "/PgUp/PgDn"
 		header2 += colorBrightWhite + " | " + colorBrightGreen + "Space" + colorBrightWhite + " pause"
@@ -1908,16 +1927,16 @@ func (m *model) marqueeText(text string, width int, rowIndex int) string {
 	}
 
 	// Time-based marquee: scroll left to right smoothly
-	// Each row has a different starting offset so they don't all scroll in sync
+	// All rows start scrolling at the same time (synchronized)
 	elapsed := time.Since(m.startTime)
 	
-	// Scroll speed: 1 character per 300ms (adjustable - slower is more readable)
+	// Scroll speed: 4 characters per 300ms animation tick
 	scrollSpeed := time.Millisecond * 300
-	baseOffset := time.Duration(rowIndex) * scrollSpeed * 3 // Different starting point per row
-	totalElapsed := elapsed + baseOffset
+	charsPerTick := 4 // Characters to scroll per animation tick
 	
-	// Calculate scroll position in characters
-	charsScrolled := int(totalElapsed / scrollSpeed)
+	// All rows start at the same time (no baseOffset for synchronization)
+	// Calculate scroll position in characters (4 chars per tick)
+	charsScrolled := int(elapsed / scrollSpeed) * charsPerTick
 	
 	// Scrollable range: from 0 to len(text) - width (so we can show full width)
 	maxScrollPos := len(text) - width
@@ -1932,7 +1951,9 @@ func (m *model) marqueeText(text string, width int, rowIndex int) string {
 	
 	// Add a pause at the end (show beginning for a bit before restarting)
 	// Pause duration: show beginning for 2 seconds before restarting
-	pauseChars := width * 10 // Equivalent to 2 seconds at current speed
+	// Calculate pause in terms of scroll ticks
+	pauseTicks := int((2 * time.Second) / scrollSpeed) // 2 seconds worth of ticks
+	pauseChars := pauseTicks * charsPerTick
 	totalScrollable := maxScrollPos + 1 + pauseChars
 	
 	// Calculate scroll position with wrap-around

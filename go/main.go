@@ -33,8 +33,15 @@ func main() {
 	flag.BoolVar(&params.Anonymize, "anonymize", false, "Anonymize topic and group names")
 	flag.BoolVar(&params.KafkaShowEmptyGroups, "all", false, "Show all groups (including those with no members)")
 	flag.StringVar(&params.ETACalculationMethod, "eta-method", "net-rate", "ETA calculation method: 'simple' (consumption rate only) or 'net-rate' (accounts for incoming rate)")
+	flag.IntVar(&params.KafkaMaxConcurrent, "max-concurrent", 10, "Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel)")
+	showTiming := flag.Bool("timing", false, "Show timing/profiling information for lag calculation and exit")
 
 	flag.Parse()
+
+	// Enable timing output if requested
+	if *showTiming {
+		params.TimingOutput = os.Stderr
+	}
 
 	if *showVersion {
 		fmt.Println(version)
