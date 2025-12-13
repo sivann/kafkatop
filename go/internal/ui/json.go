@@ -65,7 +65,7 @@ func ShowStatus(admin *kafka.AdminClient, params *types.Params) error {
 		return fmt.Errorf("failed to calculate lag: %w", err)
 	}
 
-	rates := kafka.CalcRate(kd1, kd2)
+	rates := kafka.CalcRate(kd1, kd2, params)
 
 	status := make(map[string]interface{})
 

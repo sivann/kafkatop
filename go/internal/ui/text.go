@@ -59,7 +59,7 @@ func ShowText(admin *kafka.AdminClient, params *types.Params) error {
 			return fmt.Errorf("failed to calculate lag: %w", err)
 		}
 
-		rates := kafka.CalcRate(kd1, kd2)
+		rates := kafka.CalcRate(kd1, kd2, params)
 		kd1 = kd2
 
 		for groupID, topicRates := range rates {

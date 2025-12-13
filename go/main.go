@@ -32,6 +32,7 @@ func main() {
 	flag.BoolVar(&params.KafkaOnlyIssues, "only-issues", false, "Show only groups with high lag/issues")
 	flag.BoolVar(&params.Anonymize, "anonymize", false, "Anonymize topic and group names")
 	flag.BoolVar(&params.KafkaShowEmptyGroups, "all", false, "Show all groups (including those with no members)")
+	flag.StringVar(&params.ETACalculationMethod, "eta-method", "net-rate", "ETA calculation method: 'simple' (consumption rate only) or 'net-rate' (accounts for incoming rate)")
 
 	flag.Parse()
 

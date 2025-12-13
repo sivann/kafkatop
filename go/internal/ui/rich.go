@@ -63,6 +63,14 @@ type model struct {
 	filterInput     textinput.Model
 	showFilter      bool
 	filterPattern   string
+	topicFilterInput textinput.Model
+	showTopicFilter bool
+	topicFilterPattern string
+	searchInput     textinput.Model
+	showSearch      bool
+	searchPattern   string
+	searchMatchIdx  int
+	searchMatches   []int
 	warnings        []string
 	showWarnings    bool
 	err             error
@@ -71,7 +79,18 @@ type model struct {
 	width           int
 	height          int
 	pollPeriod      time.Duration
+	pollPeriods     []time.Duration
+	pollPeriodIdx   int
+	paused          bool
 	scrollOffset    int
+	selectedRowIdx  int
+	showDetail      bool
+	detailGroup     string
+	detailTopic     string
+	showHelp        bool
+	followMode      bool
+	showFullNumbers bool
+	lastUpdateTime  time.Time
 }
 
 type tickMsg time.Time
@@ -92,14 +111,47 @@ func ShowRich(admin *kafka.AdminClient, params *types.Params) error {
 	ti.CharLimit = 156
 	ti.Width = 50
 
+	tiTopic := textinput.New()
+	tiTopic.Placeholder = "Enter topic regex pattern..."
+	tiTopic.CharLimit = 156
+	tiTopic.Width = 50
+
+	tiSearch := textinput.New()
+	tiSearch.Placeholder = "Search..."
+	tiSearch.CharLimit = 156
+	tiSearch.Width = 50
+
+	pollPeriods := []time.Duration{
+		3 * time.Second,
+		5 * time.Second,
+		10 * time.Second,
+		30 * time.Second,
+	}
+	
+	// Find initial poll period index
+	pollPeriodIdx := 0
+	initialPeriod := time.Duration(params.KafkaPollPeriod) * time.Second
+	for i, period := range pollPeriods {
+		if period == initialPeriod {
+			pollPeriodIdx = i
+			break
+		}
+	}
+
 	m := model{
-		admin:      admin,
-		params:     params,
-		loading:    true,
-		spinner:    s,
-		filterInput: ti,
-		warnings:   []string{},
-		pollPeriod: time.Duration(params.KafkaPollPeriod) * time.Second,
+		admin:            admin,
+		params:           params,
+		loading:          true,
+		spinner:          s,
+		filterInput:      ti,
+		topicFilterInput: tiTopic,
+		searchInput:      tiSearch,
+		warnings:         []string{},
+		pollPeriod:       initialPeriod,
+		pollPeriods:      pollPeriods,
+		pollPeriodIdx:    pollPeriodIdx,
+		lastUpdateTime:   time.Now(),
+		selectedRowIdx:   -1, // Initialize to -1 so no row is selected by default
 	}
 
 	// Don't use AltScreen so the output remains on quit
@@ -128,6 +180,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showFilter {
 			return m.handleFilterInput(msg)
 		}
+		if m.showTopicFilter {
+			return m.handleTopicFilterInput(msg)
+		}
+		if m.showSearch {
+			return m.handleSearchInput(msg)
+		}
+		if m.showHelp {
+			return m.handleHelpKeyPress(msg)
+		}
+		if m.showDetail {
+			return m.handleDetailKeyPress(msg)
+		}
 		return m.handleKeyPress(msg)
 
 	case tea.WindowSizeMsg:
@@ -144,6 +208,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dataMsg:
 		m.loading = false
 		m.loadingStatus = ""
+		m.lastUpdateTime = time.Now()
 		if msg.err != nil {
 			m.err = msg.err
 			m.quitting = true
@@ -160,12 +225,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tickMsg:
-		if !m.quitting {
+		if !m.quitting && !m.paused {
 			cmds = append(cmds, tickCmd(m.pollPeriod))
-			if !m.loading && !m.showFilter {
+			if !m.loading && !m.showFilter && !m.showTopicFilter && !m.showSearch {
 				m.loading = true
 				cmds = append(cmds, loadData(m.admin, m.params))
 			}
+		} else if !m.quitting {
+			// Still schedule next tick even when paused, but don't load data
+			cmds = append(cmds, tickCmd(m.pollPeriod))
 		}
 
 	case spinner.TickMsg:
@@ -175,6 +243,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.showFilter {
 		m.filterInput, cmd = m.filterInput.Update(msg)
+		cmds = append(cmds, cmd)
+	} else if m.showTopicFilter {
+		m.topicFilterInput, cmd = m.topicFilterInput.Update(msg)
+		cmds = append(cmds, cmd)
+	} else if m.showSearch {
+		m.searchInput, cmd = m.searchInput.Update(msg)
 		cmds = append(cmds, cmd)
 	} else {
 		m.table, cmd = m.table.Update(msg)
@@ -208,6 +282,18 @@ func (m model) View() string {
 	if m.showFilter {
 		return m.viewFilterDialog()
 	}
+	if m.showTopicFilter {
+		return m.viewTopicFilterDialog()
+	}
+	if m.showSearch {
+		return m.viewSearchDialog()
+	}
+	if m.showHelp {
+		return m.viewHelp()
+	}
+	if m.showDetail {
+		return m.viewDetail()
+	}
 
 	return m.viewMain()
 }
@@ -232,22 +318,162 @@ func (m *model) viewFilterDialog() string {
 	return b.String()
 }
 
+func (m *model) viewTopicFilterDialog() string {
+	var b strings.Builder
+
+	b.WriteString("\n")
+	b.WriteString(headerStyle.Render("Filter Topics"))
+	b.WriteString("\n\n")
+
+	currentFilter := m.topicFilterPattern
+	if currentFilter == "" {
+		currentFilter = "(none)"
+	}
+	b.WriteString(fmt.Sprintf("Current topic filter: %s\n\n", currentFilter))
+
+	b.WriteString(m.topicFilterInput.View())
+	b.WriteString("\n\n")
+	b.WriteString("Press Enter to apply, Esc to cancel\n")
+
+	return b.String()
+}
+
+func (m *model) viewSearchDialog() string {
+	var b strings.Builder
+
+	b.WriteString("\n")
+	b.WriteString(headerStyle.Render("Search"))
+	b.WriteString("\n\n")
+
+	b.WriteString(m.searchInput.View())
+	b.WriteString("\n\n")
+	if len(m.searchMatches) > 0 {
+		b.WriteString(fmt.Sprintf("Match %d of %d\n", m.searchMatchIdx+1, len(m.searchMatches)))
+		b.WriteString("Press n/N to navigate, Esc to cancel\n")
+	} else if m.searchPattern != "" {
+		b.WriteString("No matches found\n")
+		b.WriteString("Press Esc to cancel\n")
+	} else {
+		b.WriteString("Press Esc to cancel\n")
+	}
+
+	return b.String()
+}
+
+func (m *model) viewHelp() string {
+	var b strings.Builder
+
+	b.WriteString("\n")
+	b.WriteString(headerStyle.Render("Help - Keyboard Shortcuts"))
+	b.WriteString("\n\n")
+
+	b.WriteString("Navigation:\n")
+	b.WriteString("  ↑/↓, J/K     Scroll up/down\n")
+	b.WriteString("  Home/End     Jump to top/bottom\n")
+	b.WriteString("\n")
+
+	b.WriteString("Actions:\n")
+	b.WriteString("  Q             Quit\n")
+	b.WriteString("  Space         Pause/resume updates\n")
+	b.WriteString("  +/-           Adjust refresh rate\n")
+	b.WriteString("  F             Filter consumer groups\n")
+	b.WriteString("  X             Filter topics\n")
+	b.WriteString("  /             Search\n")
+	b.WriteString("  ? or H        Show this help\n")
+	b.WriteString("  Enter         View partition details\n")
+	b.WriteString("  Esc           Close dialogs/details\n")
+	b.WriteString("\n")
+
+	b.WriteString("Sorting:\n")
+	b.WriteString("  G             Sort by Group\n")
+	b.WriteString("  O             Sort by Topic\n")
+	b.WriteString("  P             Sort by Partitions\n")
+	b.WriteString("  T or t        Sort by Time Left\n")
+	b.WriteString("  L             Sort by Lag\n")
+	b.WriteString("  N             Sort by New topic rate\n")
+	b.WriteString("  C             Sort by Consumed rate\n")
+	b.WriteString("\n")
+
+	b.WriteString("Other:\n")
+	b.WriteString("  U             Toggle full numbers\n")
+	b.WriteString("  Ctrl+F        Toggle follow mode\n")
+	b.WriteString("\n")
+
+	b.WriteString("Press ? or H or Esc to close\n")
+
+	return b.String()
+}
+
+func (m *model) viewDetail() string {
+	var b strings.Builder
+
+	if m.kd == nil || m.rates == nil {
+		return "No data available\n"
+	}
+
+	groupLag, exists := m.kd.GroupLags[m.detailGroup]
+	if !exists {
+		return fmt.Sprintf("Group %s not found\n", m.detailGroup)
+	}
+
+	lagStats, exists := groupLag[m.detailTopic]
+	if !exists {
+		return fmt.Sprintf("Topic %s not found for group %s\n", m.detailTopic, m.detailGroup)
+	}
+
+	rateStats, exists := m.rates[m.detailGroup][m.detailTopic]
+	if !exists {
+		rateStats = &types.RateStats{}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(headerStyle.Render(fmt.Sprintf("Partition Details: %s / %s", m.detailGroup, m.detailTopic)))
+	b.WriteString("\n\n")
+
+	b.WriteString(fmt.Sprintf("Total Lag: %s\n", formatNumber(m.showFullNumbers, lagStats.Sum)))
+	b.WriteString(fmt.Sprintf("Min: %s, Max: %s, Mean: %.1f, Median: %s\n",
+		formatNumber(m.showFullNumbers, lagStats.Min),
+		formatNumber(m.showFullNumbers, lagStats.Max),
+		lagStats.Mean,
+		formatNumber(m.showFullNumbers, lagStats.Median)))
+	b.WriteString(fmt.Sprintf("Consumption Rate: %s evts/sec\n", formatNumber(m.showFullNumbers, int64(rateStats.EventsConsumptionRate))))
+	b.WriteString(fmt.Sprintf("Arrival Rate: %s evts/sec\n", formatNumber(m.showFullNumbers, int64(rateStats.EventsArrivalRate))))
+	b.WriteString(fmt.Sprintf("ETA: %s\n", rateStats.RemainingHMS))
+	b.WriteString("\n")
+
+	b.WriteString("Partition Details:\n")
+	b.WriteString("Partition | Lag\n")
+	b.WriteString("----------|----\n")
+
+	// Sort partitions for display
+	partitions := make([]int32, 0, len(lagStats.PartitionLags))
+	for part := range lagStats.PartitionLags {
+		partitions = append(partitions, part)
+	}
+	sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
+
+	for _, part := range partitions {
+		lag := lagStats.PartitionLags[part]
+		b.WriteString(fmt.Sprintf("%9d | %s\n", part, formatNumber(m.showFullNumbers, lag)))
+	}
+
+	b.WriteString("\nPress Esc to return\n")
+
+	return b.String()
+}
+
 func (m *model) viewMain() string {
 	var b strings.Builder
 
-	// Warnings panel at top if shown
-	if m.showWarnings && len(m.warnings) > 0 {
-		warningText := strings.Join(m.warnings, "\n")
-		b.WriteString(colorRed + "⚠ Warnings:\n" + warningText + colorReset)
-		b.WriteString("\n\n")
-	}
+	// Warnings panel removed - warnings are no longer displayed
 
 	// Table
 	if m.kd != nil && m.rates != nil {
 		b.WriteString(m.renderTable())
 
-		// Bottom legend/header line - white with highlighted hotkeys
+		// Bottom legend/header lines - split into 2 rows for narrow screens
 		timeStr := time.Now().Format("15:04:05")
+		updateTimeStr := m.lastUpdateTime.Format("15:04:05")
 		
 		// Helper function to format hotkey in legend
 		formatLegendHotkey := func(text string, hotkey string, sortKey string) string {
@@ -260,35 +486,60 @@ func (m *model) viewMain() string {
 			}
 		}
 		
-		header := colorBrightWhite + fmt.Sprintf("%s poll: %d | actions: [Q]uit, [F]ilter, [W]arnings, sort-by: ", timeStr, m.iteration)
-		
-		// Format each sortable column hotkey (wrap in bright white, then highlight hotkey)
-		header += colorBrightWhite + formatLegendHotkey("[G]roup", "G", "group") + ", "
-		header += colorBrightWhite + formatLegendHotkey("T[o]pic", "o", "topic") + ", "
-		header += colorBrightWhite + formatLegendHotkey("[P]artitions", "P", "partitions") + ", "
-		header += colorBrightWhite + formatLegendHotkey("[T]ime Left", "T", "eta") + ", "
-		header += colorBrightWhite + formatLegendHotkey("[L]ag", "L", "lag") + ", "
-		header += colorBrightWhite + formatLegendHotkey("[N]ew topic", "N", "newrate") + ", "
-		header += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate")
-		
-		// Add scroll information
-		header += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑" + colorBrightWhite + "/" + colorBrightGreen + "↓" + colorBrightWhite + " or " + colorBrightGreen + "J" + colorBrightWhite + "/" + colorBrightGreen + "K"
-
-		if m.filterPattern != "" {
-			header += colorBrightWhite + fmt.Sprintf(" | Filter: %s", m.filterPattern)
+		// Row 1: Status and actions
+		header1 := colorBrightWhite + fmt.Sprintf("%s poll: %d", timeStr, m.iteration)
+		if m.paused {
+			header1 += colorYellow + " [PAUSED]"
 		}
+		header1 += colorBrightWhite + fmt.Sprintf(" | refresh: %v", m.pollPeriod)
+		header1 += colorBrightWhite + " | actions: "
+		header1 += colorBrightWhite + formatLegendHotkey("[Q]uit", "Q", "") + ", "
+		header1 += colorBrightWhite + formatLegendHotkey("[F]ilter", "F", "") + ", "
+		header1 += colorBrightWhite + formatLegendHotkey("[X]topic filter", "X", "") + ", "
+		header1 += colorBrightWhite + formatLegendHotkey("[?]Help", "?", "")
+		
+		if m.filterPattern != "" {
+			header1 += colorBrightWhite + fmt.Sprintf(" | Group: %s", m.filterPattern)
+		}
+		if m.topicFilterPattern != "" {
+			header1 += colorBrightWhite + fmt.Sprintf(" | Topic: %s", m.topicFilterPattern)
+		}
+		
+		// Row 2: Sorting and navigation
+		header2 := colorBrightWhite + "sort-by: "
+		header2 += colorBrightWhite + formatLegendHotkey("[G]roup", "G", "group") + ", "
+		header2 += colorBrightWhite + formatLegendHotkey("T[o]pic", "o", "topic") + ", "
+		header2 += colorBrightWhite + formatLegendHotkey("[P]artitions", "P", "partitions") + ", "
+		header2 += colorBrightWhite + formatLegendHotkey("[T]ime Left", "T", "eta") + " (t/T), "
+		header2 += colorBrightWhite + formatLegendHotkey("[L]ag", "L", "lag") + ", "
+		header2 += colorBrightWhite + formatLegendHotkey("[N]ew topic", "N", "newrate") + ", "
+		header2 += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate")
+		header2 += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑↓" + colorBrightWhite + "/" + colorBrightGreen + "JK"
+		header2 += colorBrightWhite + " | " + colorBrightGreen + "Space" + colorBrightWhite + " pause"
+		header2 += colorBrightWhite + " | " + colorBrightGreen + "+/-" + colorBrightWhite + " rate"
 
 		if m.sortKey != "" {
 			direction := "↑"
 			if m.sortReverse {
 				direction = "↓"
 			}
-			header += colorBrightWhite + fmt.Sprintf(" | Sorted by: %s %s", m.sortKey, direction)
+			header2 += colorBrightWhite + fmt.Sprintf(" | Sorted: %s %s", m.sortKey, direction)
 		}
+		
+		// Count totals
+		rows := m.buildRowData()
+		totalGroups := make(map[string]bool)
+		totalTopics := make(map[string]bool)
+		for _, row := range rows {
+			totalGroups[row.sortGroup] = true
+			totalTopics[row.sortGroup+"|"+row.sortTopic] = true
+		}
+		header2 += colorBrightWhite + fmt.Sprintf(" | Groups: %d Topics: %d", len(totalGroups), len(totalTopics))
 
-		b.WriteString("\n" + colorBold + header + colorReset)
+		b.WriteString("\n" + colorBold + header1 + colorReset)
+		b.WriteString("\n" + colorBold + header2 + colorReset)
 
-		// Combined status line: viewport info + loading status
+		// Combined status line: viewport info + loading status + update time
 		var statusParts []string
 
 		viewportInfo := m.getViewportInfo()
@@ -303,6 +554,9 @@ func (m *model) viewMain() string {
 			}
 			statusParts = append(statusParts, fmt.Sprintf("%s %s", m.spinner.View(), loadingText))
 		}
+
+		// Add update time to status bar
+		statusParts = append(statusParts, fmt.Sprintf("Updated: %s", updateTimeStr))
 
 		if len(statusParts) > 0 {
 			b.WriteString("\n" + strings.Join(statusParts, " | "))
@@ -320,53 +574,156 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 
+	case " ":
+		// Pause/resume updates
+		m.paused = !m.paused
+		if m.paused {
+			m.addWarning("Updates paused - press Space to resume")
+		} else {
+			m.addWarning("Updates resumed")
+		}
+		return m, nil
+
+	case "+", "=":
+		// Increase refresh rate
+		if m.pollPeriodIdx < len(m.pollPeriods)-1 {
+			m.pollPeriodIdx++
+			m.pollPeriod = m.pollPeriods[m.pollPeriodIdx]
+			m.addWarning(fmt.Sprintf("Refresh rate: %v", m.pollPeriod))
+		}
+		return m, nil
+
+	case "-", "_":
+		// Decrease refresh rate
+		if m.pollPeriodIdx > 0 {
+			m.pollPeriodIdx--
+			m.pollPeriod = m.pollPeriods[m.pollPeriodIdx]
+			m.addWarning(fmt.Sprintf("Refresh rate: %v", m.pollPeriod))
+		}
+		return m, nil
+
 	case "f":
 		m.showFilter = true
 		m.filterInput.Focus()
 		return m, nil
 
-	case "w":
-		m.showWarnings = !m.showWarnings
+	case "x":
+		// 'x' for topic filter
+		m.showTopicFilter = true
+		m.topicFilterInput.Focus()
+		return m, nil
+
+	case "/":
+		m.showSearch = true
+		m.searchInput.Focus()
+		m.searchPattern = ""
+		m.searchMatchIdx = 0
+		m.searchMatches = []int{}
+		return m, nil
+
+	case "?", "h":
+		m.showHelp = true
+		return m, nil
+
+	case "enter":
+		// Enter detail view
+		rows := m.buildRowData()
+		m.sortRowData(rows)
+		if m.selectedRowIdx >= 0 && m.selectedRowIdx < len(rows) {
+			row := rows[m.selectedRowIdx]
+			m.showDetail = true
+			m.detailGroup = row.sortGroup
+			m.detailTopic = row.sortTopic
+		}
+		return m, nil
+
+	case "home":
+		m.scrollOffset = 0
+		m.selectedRowIdx = 0
+		return m, nil
+
+	case "end":
+		rows := m.buildRowData()
+		m.sortRowData(rows)
+		maxRows := m.height - 8
+		if maxRows < 5 {
+			maxRows = 5
+		}
+		if len(rows) > maxRows {
+			m.scrollOffset = len(rows) - maxRows
+			m.selectedRowIdx = len(rows) - 1
+		} else {
+			m.scrollOffset = 0
+			m.selectedRowIdx = len(rows) - 1
+		}
 		return m, nil
 
 	case "j", "down":
 		m.scrollOffset++
+		rows := m.buildRowData()
+		m.sortRowData(rows)
+		if m.selectedRowIdx < len(rows)-1 {
+			m.selectedRowIdx++
+		}
 		return m, nil
 
 	case "k", "up":
 		if m.scrollOffset > 0 {
 			m.scrollOffset--
 		}
+		if m.selectedRowIdx > 0 {
+			m.selectedRowIdx--
+		}
 		return m, nil
 
-	case "g", "o", "p", "t", "l", "c", "n":
+	case "u":
+		// Toggle full numbers
+		m.showFullNumbers = !m.showFullNumbers
+		return m, nil
+
+	case "ctrl+f":
+		// Toggle follow mode
+		m.followMode = !m.followMode
+		if m.followMode {
+			m.addWarning("Follow mode enabled")
+		} else {
+			m.addWarning("Follow mode disabled")
+		}
+		return m, nil
+
+	case "g", "G", "o", "O", "p", "P", "t", "T", "l", "L", "c", "C", "n", "N":
 		newSortKey := ""
 		switch msg.String() {
-		case "g":
+		case "g", "G":
 			newSortKey = "group"
-		case "o":
+		case "o", "O":
 			newSortKey = "topic"
-		case "p":
+		case "p", "P":
 			newSortKey = "partitions"
-		case "t":
+		case "t", "T":
+			// Both t and T sort by Time Left (ETA)
 			newSortKey = "eta"
-		case "l":
+		case "l", "L":
 			newSortKey = "lag"
-		case "c":
+		case "c", "C":
 			newSortKey = "rate"
-		case "n":
+		case "n", "N":
 			newSortKey = "newrate"
 		}
 
-		if m.sortKey == newSortKey {
-			m.sortReverse = !m.sortReverse
-		} else {
-			m.sortKey = newSortKey
-			m.sortReverse = (newSortKey == "eta")
-		}
+		if newSortKey != "" {
+			if m.sortKey == newSortKey {
+				m.sortReverse = !m.sortReverse
+			} else {
+				m.sortKey = newSortKey
+				m.sortReverse = (newSortKey == "eta" || newSortKey == "lag")
+			}
 
-		m.scrollOffset = 0 // Reset scroll when sorting
-		m.updateTable()
+			m.scrollOffset = 0 // Reset scroll when sorting
+			m.selectedRowIdx = 0
+			m.updateTable()
+			return m, nil
+		}
 		return m, nil
 	}
 
@@ -400,6 +757,151 @@ func (m *model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.filterInput, cmd = m.filterInput.Update(msg)
 	return m, cmd
+}
+
+func (m *model) handleTopicFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		pattern := m.topicFilterInput.Value()
+		if pattern != "" {
+			m.topicFilterPattern = pattern
+			m.addWarning(fmt.Sprintf("Applied topic filter: %s", pattern))
+		} else {
+			m.topicFilterPattern = ""
+			m.addWarning("Cleared topic filter")
+		}
+		m.showTopicFilter = false
+		m.topicFilterInput.Blur()
+		m.topicFilterInput.SetValue("")
+		return m, nil
+
+	case tea.KeyEsc:
+		m.showTopicFilter = false
+		m.topicFilterInput.Blur()
+		m.topicFilterInput.SetValue("")
+		m.addWarning("Topic filter input cancelled")
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.topicFilterInput, cmd = m.topicFilterInput.Update(msg)
+	return m, cmd
+}
+
+func (m *model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		// Close search dialog and apply search to main view
+		pattern := m.searchInput.Value()
+		m.searchPattern = pattern
+		m.updateSearchMatches()
+		if len(m.searchMatches) > 0 {
+			m.searchMatchIdx = 0
+			m.scrollToMatch()
+		}
+		m.showSearch = false
+		m.searchInput.Blur()
+		return m, nil
+
+	case tea.KeyEsc:
+		m.showSearch = false
+		m.searchInput.Blur()
+		m.searchInput.SetValue("")
+		m.searchPattern = ""
+		m.searchMatchIdx = 0
+		m.searchMatches = []int{}
+		return m, nil
+	}
+
+	// Handle n/N for navigation while searching
+	switch msg.String() {
+	case "n":
+		if len(m.searchMatches) > 0 {
+			m.searchMatchIdx = (m.searchMatchIdx + 1) % len(m.searchMatches)
+			m.scrollToMatch()
+		}
+		return m, nil
+
+	case "N":
+		if len(m.searchMatches) > 0 {
+			m.searchMatchIdx = (m.searchMatchIdx - 1 + len(m.searchMatches)) % len(m.searchMatches)
+			m.scrollToMatch()
+		}
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	// Update search as user types
+	if m.searchInput.Value() != m.searchPattern {
+		m.searchPattern = m.searchInput.Value()
+		m.updateSearchMatches()
+		if len(m.searchMatches) > 0 {
+			m.searchMatchIdx = 0
+			m.scrollToMatch()
+		}
+	}
+	return m, cmd
+}
+
+func (m *model) handleHelpKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "?", "h", "q", "esc":
+		m.showHelp = false
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.showDetail = false
+		m.detailGroup = ""
+		m.detailTopic = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *model) updateSearchMatches() {
+	if m.searchPattern == "" {
+		m.searchMatches = []int{}
+		return
+	}
+
+	rows := m.buildRowData()
+	m.sortRowData(rows)
+	m.searchMatches = []int{}
+
+	pattern := strings.ToLower(m.searchPattern)
+	for i, row := range rows {
+		searchText := strings.ToLower(row.group + " " + row.topic)
+		if strings.Contains(searchText, pattern) {
+			m.searchMatches = append(m.searchMatches, i)
+		}
+	}
+}
+
+func (m *model) scrollToMatch() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+
+	matchIdx := m.searchMatches[m.searchMatchIdx]
+	maxRows := m.height - 8
+	if maxRows < 5 {
+		maxRows = 5
+	}
+
+	// Scroll to show the match
+	if matchIdx < m.scrollOffset {
+		m.scrollOffset = matchIdx
+	} else if matchIdx >= m.scrollOffset+maxRows {
+		m.scrollOffset = matchIdx - maxRows + 1
+	}
+
+	m.selectedRowIdx = matchIdx
 }
 
 func (m *model) updateTable() {
@@ -574,6 +1076,36 @@ func (m *model) renderTable() string {
 		endRow = len(rows)
 	}
 
+	// Apply follow mode - auto-scroll to highest lag
+	if m.followMode && len(rows) > 0 {
+		maxLagIdx := 0
+		maxLag := rows[0].lag
+		for i, r := range rows {
+			if r.lag > maxLag {
+				maxLag = r.lag
+				maxLagIdx = i
+			}
+		}
+		if maxLagIdx >= maxRows {
+			m.scrollOffset = maxLagIdx - maxRows + 1
+			m.selectedRowIdx = maxLagIdx
+		} else {
+			m.scrollOffset = 0
+			m.selectedRowIdx = maxLagIdx
+		}
+		startRow = m.scrollOffset
+		if startRow >= len(rows) {
+			startRow = len(rows) - 1
+		}
+		if startRow < 0 {
+			startRow = 0
+		}
+		endRow = startRow + maxRows
+		if endRow > len(rows) {
+			endRow = len(rows)
+		}
+	}
+
 	// Render rows with scroll
 	for i := startRow; i < endRow; i++ {
 		row := rows[i]
@@ -591,34 +1123,57 @@ func (m *model) renderTable() string {
 		// Format values (plain text)
 		partsStr := fmt.Sprintf("%d", row.parts)
 		sinceStr := fmt.Sprintf("%.1fs", row.since)
-		consumedStr := formatNumber(row.consumed)
-		newRateStr := formatNumber(row.newRate)
-		consRateStr := formatNumber(row.consRate)
+		consumedStr := formatNumber(m.showFullNumbers, row.consumed)
+		newRateStr := formatNumber(m.showFullNumbers, row.newRate)
+		consRateStr := formatNumber(m.showFullNumbers, row.consRate)
 		etaStr := row.eta
-		lagStr := formatNumber(row.lag)
+		lagStr := formatNumber(m.showFullNumbers, row.lag)
+		
+		// Check if this row matches search (only if search is active)
+		isSearchMatch := false
+		if m.showSearch && len(m.searchMatches) > 0 {
+			for _, matchIdx := range m.searchMatches {
+				if matchIdx == i {
+					isSearchMatch = true
+					break
+				}
+			}
+		}
+		// Only highlight selected row if user is actively navigating (selectedRowIdx >= 0 and not default)
+		isSelected := (m.selectedRowIdx >= 0 && i == m.selectedRowIdx && (m.searchPattern != "" || len(m.searchMatches) > 0))
 
 		// Get color codes
 		rateColorCode := getColorCode(row.rateColor)
 		etaColorCode := getColorCode(row.etaColor)
 
+		// Determine background color
+		// Priority: issues (red) > search match (green) > selected (blue)
+		var bgCode string
 		if row.hasIssues {
-			// Dark red background for entire row
-			bgCode := "\033[48;5;52m" // background color 52 (dark red)
-			resetCode := "\033[0m"
+			bgCode = "\033[48;5;52m" // Dark red background for issues
+		} else if isSearchMatch {
+			bgCode = "\033[48;5;22m" // Dark green background for search match
+		} else if isSelected {
+			bgCode = "\033[48;5;17m" // Dark blue background for selected (only when searching)
+		} else {
+			bgCode = ""
+		}
+		resetCode := "\033[0m"
 
-			// Build row with background spanning entire width
-			rowText := fmt.Sprintf("%-*s %-*s %*s %*s %*s %*s %*s %*s %*s",
-				groupWidth, group,
-				topicWidth, topic,
-				partsWidth, partsStr,
-				sinceWidth, sinceStr,
-				consumedWidth, consumedStr,
-				newRateWidth, newRateStr,
-				consRateWidth, consRateStr,
-				etaWidth, etaStr,
-				lagWidth, lagStr)
+		// Build row with background spanning entire width
+		rowText := fmt.Sprintf("%-*s %-*s %*s %*s %*s %*s %*s %*s %*s",
+			groupWidth, group,
+			topicWidth, topic,
+			partsWidth, partsStr,
+			sinceWidth, sinceStr,
+			consumedWidth, consumedStr,
+			newRateWidth, newRateStr,
+			consRateWidth, consRateStr,
+			etaWidth, etaStr,
+			lagWidth, lagStr)
 
-			// Apply background to entire row
+		// Apply background and colors
+		if bgCode != "" {
 			b.WriteString(bgCode + rowText + resetCode + "\n")
 		} else {
 			// Normal row with colored cells
@@ -771,6 +1326,14 @@ func (m *model) buildRowData() []*rowData {
 				}
 			}
 
+			// Apply topic filter pattern
+			if m.topicFilterPattern != "" {
+				matched, _ := regexp.MatchString(m.topicFilterPattern, topic)
+				if !matched {
+					continue
+				}
+			}
+
 			groupName := groupID
 			topicName := topic
 
@@ -807,9 +1370,13 @@ func (m *model) buildRowData() []*rowData {
 }
 
 // formatNumber formats numbers in human-readable SI units (K, M, G, etc.)
-func formatNumber(n int64) string {
+func formatNumber(showFull bool, n int64) string {
+	if showFull {
+		return fmt.Sprintf("%d", n)
+	}
+
 	if n < 0 {
-		return fmt.Sprintf("-%s", formatNumber(-n))
+		return fmt.Sprintf("-%s", formatNumber(false, -n))
 	}
 
 	if n < 1000 {
@@ -952,7 +1519,7 @@ func loadData(admin *kafka.AdminClient, params *types.Params) tea.Cmd {
 		}
 
 		// Calculate rates
-		rates := kafka.CalcRate(kd1, kd2)
+		rates := kafka.CalcRate(kd1, kd2, params)
 
 		return dataMsg{
 			kd:    kd2,

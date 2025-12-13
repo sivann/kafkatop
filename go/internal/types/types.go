@@ -116,6 +116,7 @@ type Params struct {
 	KafkaStatus             bool
 	TextMode                bool
 	Anonymize               bool
+	ETACalculationMethod    string // "simple" (old) or "net-rate" (new, accounts for incoming rate)
 }
 
 // ClusterInfo represents Kafka cluster information

@@ -156,7 +156,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 }
 
 // CalcRate calculates consumption rates between two KafkaData snapshots
-func CalcRate(kd1, kd2 *types.KafkaData) map[string]map[string]*types.RateStats {
+func CalcRate(kd1, kd2 *types.KafkaData, params *types.Params) map[string]map[string]*types.RateStats {
 	rates := make(map[string]map[string]*types.RateStats)
 
 	for groupID, group1Offsets := range kd1.GroupOffsets {
@@ -214,11 +214,38 @@ func CalcRate(kd1, kd2 *types.KafkaData) map[string]map[string]*types.RateStats 
 			var remainingSec int64
 			remainingHMS := "-"
 
-			if lag, exists := kd2.GroupLags[groupID][topic]; exists && eventsConsumptionRate > 0 {
-				remainingSec = int64(float64(lag.Sum) / eventsConsumptionRate)
-				remainingHMS = formatDuration(time.Duration(remainingSec) * time.Second)
-			} else if eventsConsumptionRate == 0 {
-				remainingSec = -1
+			if lag, exists := kd2.GroupLags[groupID][topic]; exists {
+				etaMethod := params.ETACalculationMethod
+				if etaMethod == "" {
+					etaMethod = "net-rate" // Default to new method
+				}
+
+				if etaMethod == "net-rate" {
+					// More accurate ETA: account for incoming rate
+					// If consumption > arrival, lag decreases
+					// If arrival > consumption, lag increases
+					netRate := eventsConsumptionRate - eventsArrivalRate
+					if netRate > 0 {
+						// Consuming faster than arriving - lag will decrease
+						remainingSec = int64(float64(lag.Sum) / netRate)
+						remainingHMS = formatDuration(time.Duration(remainingSec) * time.Second)
+					} else if eventsConsumptionRate > 0 {
+						// Arriving faster than consuming - lag will increase
+						// ETA is negative/infinite, show as "-"
+						remainingSec = -1
+					} else {
+						// No consumption
+						remainingSec = -1
+					}
+				} else {
+					// Simple method: only use consumption rate (original behavior)
+					if eventsConsumptionRate > 0 {
+						remainingSec = int64(float64(lag.Sum) / eventsConsumptionRate)
+						remainingHMS = formatDuration(time.Duration(remainingSec) * time.Second)
+					} else {
+						remainingSec = -1
+					}
+				}
 			}
 
 			rates[groupID][topic] = &types.RateStats{
