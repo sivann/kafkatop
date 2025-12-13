@@ -22,12 +22,15 @@ import (
 const (
 	colorReset   = "\033[0m"
 	colorGreen   = "\033[32m"
+	colorBrightGreen = "\033[1;32m"
 	colorYellow  = "\033[33m"
 	colorCyan    = "\033[36m"
 	colorRed     = "\033[31m"
 	colorMagenta = "\033[35m"
 	colorWhite   = "\033[37m"
+	colorBrightWhite = "\033[1;37m"
 	colorBold    = "\033[1m"
+	colorReverse = "\033[7m"
 )
 
 var (
@@ -243,13 +246,32 @@ func (m *model) viewMain() string {
 	if m.kd != nil && m.rates != nil {
 		b.WriteString(m.renderTable())
 
-		// Bottom legend/header line
+		// Bottom legend/header line - white with highlighted hotkeys
 		timeStr := time.Now().Format("15:04:05")
-		header := fmt.Sprintf("%s poll: %d | actions: [Q]uit, [F]ilter, [W]arnings, sort-by: [G]roup, T[o]pic, [P]artitions, [T]ime Left, [L]ag, [C]onsumed",
-			timeStr, m.iteration)
+		
+		// Helper function to format hotkey in legend
+		formatLegendHotkey := func(text string, hotkey string, sortKey string) string {
+			if m.sortKey == sortKey {
+				// Reverse video for sorted key
+				return strings.Replace(text, hotkey, colorReverse+colorBrightGreen+hotkey+colorReset+colorBrightWhite, 1)
+			} else {
+				// Normal green highlighting
+				return strings.Replace(text, hotkey, colorBrightGreen+hotkey+colorBrightWhite, 1)
+			}
+		}
+		
+		header := colorBrightWhite + fmt.Sprintf("%s poll: %d | actions: [Q]uit, [F]ilter, [W]arnings, sort-by: ", timeStr, m.iteration)
+		
+		// Format each sortable column hotkey (wrap in bright white, then highlight hotkey)
+		header += colorBrightWhite + formatLegendHotkey("[G]roup", "G", "group") + ", "
+		header += colorBrightWhite + formatLegendHotkey("T[o]pic", "o", "topic") + ", "
+		header += colorBrightWhite + formatLegendHotkey("[P]artitions", "P", "partitions") + ", "
+		header += colorBrightWhite + formatLegendHotkey("[T]ime Left", "T", "eta") + ", "
+		header += colorBrightWhite + formatLegendHotkey("[L]ag", "L", "lag") + ", "
+		header += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate")
 
 		if m.filterPattern != "" {
-			header += fmt.Sprintf(" | Filter: %s", m.filterPattern)
+			header += colorBrightWhite + fmt.Sprintf(" | Filter: %s", m.filterPattern)
 		}
 
 		if m.sortKey != "" {
@@ -257,10 +279,10 @@ func (m *model) viewMain() string {
 			if m.sortReverse {
 				direction = "↓"
 			}
-			header += fmt.Sprintf(" | Sorted by: %s %s", m.sortKey, direction)
+			header += colorBrightWhite + fmt.Sprintf(" | Sorted by: %s %s", m.sortKey, direction)
 		}
 
-		b.WriteString("\n" + colorBold + colorCyan + header + colorReset)
+		b.WriteString("\n" + colorBold + header + colorReset)
 
 		// Combined status line: viewport info + loading status
 		var statusParts []string
@@ -419,10 +441,46 @@ func (m *model) renderTable() string {
 	var b strings.Builder
 
 	// ANSI color codes for manual coloring
+	brightWhite := "\033[1;37m"
 	green := "\033[1;32m"
 	cyan := "\033[36m"
-	yellow := "\033[1;33m"
+	reverse := "\033[7m"
 	reset := "\033[0m"
+
+	// Helper function to format header column with hotkey highlighting
+	// Format with plain text first to get correct width, then apply colors
+	formatHeaderCol := func(text string, hotkey string, sortKey string, width int, leftAlign bool) string {
+		// First format with plain text to get correct width
+		var formatted string
+		if leftAlign {
+			formatted = fmt.Sprintf("%-*s", width, text)
+		} else {
+			formatted = fmt.Sprintf("%*s", width, text)
+		}
+		
+		// Now find the text in the formatted string and replace with colored version
+		hotkeyIdx := strings.Index(strings.ToLower(text), strings.ToLower(hotkey))
+		
+		var coloredText string
+		if hotkeyIdx == -1 {
+			coloredText = brightWhite + text + reset
+		} else {
+			before := text[:hotkeyIdx]
+			hotkeyChar := text[hotkeyIdx : hotkeyIdx+1]
+			after := text[hotkeyIdx+1:]
+			
+			if m.sortKey == sortKey {
+				// Reverse video for sorted column hotkey
+				coloredText = brightWhite + before + reverse + green + hotkeyChar + reset + brightWhite + after + reset
+			} else {
+				// Normal highlighting for hotkey
+				coloredText = brightWhite + before + green + hotkeyChar + brightWhite + after + reset
+			}
+		}
+		
+		// Replace the plain text with colored version in the formatted string
+		return strings.Replace(formatted, text, coloredText, 1)
+	}
 
 	// Build 2-row header matching Python version
 	// Row 1 - top line (only for multi-line headers)
@@ -437,32 +495,36 @@ func (m *model) renderTable() string {
 		etaWidth, "",
 		lagWidth, "")
 
-	// Row 2 - bottom line with hotkey highlighting
-	row2Plain := fmt.Sprintf("%-*s %-*s %*s %*s %*s %*s %*s %*s %*s",
-		groupWidth, "Group",
-		topicWidth, "Topic",
-		partsWidth, "Partitions",
-		sinceWidth, "(sec)",
-		consumedWidth, "Consumed",
-		newRateWidth, "evts/sec",
-		consRateWidth, "evts/sec",
-		etaWidth, "Time Left",
-		lagWidth, "Lag")
+	// Row 2 - build each column separately
+	groupCol := formatHeaderCol("Group", "G", "group", groupWidth, true)
+	
+	// Topic header - special handling since hotkey is "o" not "T"
+	var topicCol string
+	topicPlain := fmt.Sprintf("%-*s", topicWidth, "Topic")
+	if m.sortKey == "topic" {
+		topicCol = strings.Replace(topicPlain, "Topic", brightWhite+"T"+reverse+green+"o"+reset+brightWhite+"pic"+reset, 1)
+	} else {
+		topicCol = strings.Replace(topicPlain, "Topic", brightWhite+"T"+green+"o"+brightWhite+"pic"+reset, 1)
+	}
+	
+	partsCol := formatHeaderCol("Partitions", "P", "partitions", partsWidth, true)
+	sincePlain := fmt.Sprintf("%*s", sinceWidth, "(sec)")
+	sinceCol := strings.Replace(sincePlain, "(sec)", brightWhite+"(sec)"+reset, 1)
+	consumedTotalPlain := fmt.Sprintf("%*s", consumedWidth, "Consumed")
+	consumedTotalCol := strings.Replace(consumedTotalPlain, "Consumed", brightWhite+"Consumed"+reset, 1)
+	newRatePlain := fmt.Sprintf("%*s", newRateWidth, "evts/sec")
+	newRateCol := strings.Replace(newRatePlain, "evts/sec", brightWhite+"evts/sec"+reset, 1)
+	consumedRateCol := formatHeaderCol("Consumed", "C", "rate", consRateWidth, false)
+	etaCol := formatHeaderCol("Time Left", "T", "eta", etaWidth, false)
+	lagCol := formatHeaderCol("Lag", "L", "lag", lagWidth, false)
 
-	// Apply color to hotkey letters: [G]roup, T[o]pic, [P]artitions, [C]onsumed, [T]ime, [L]ag
-	row2Colored := row2Plain
-	row2Colored = strings.Replace(row2Colored, "Group", yellow+"G"+green+"roup", 1)
-	row2Colored = strings.Replace(row2Colored, "Topic", "T"+yellow+"o"+green+"pic", 1)
-	row2Colored = strings.Replace(row2Colored, "Partitions", yellow+"P"+green+"artitions", 1)
-	row2Colored = strings.Replace(row2Colored, "Consumed", yellow+"C"+green+"onsumed", 1)
-	row2Colored = strings.Replace(row2Colored, "Time Left", yellow+"T"+green+"ime Left", 1)
-	row2Colored = strings.Replace(row2Colored, "Lag", yellow+"L"+green+"ag", 1)
+	row2 := groupCol + " " + topicCol + " " + partsCol + " " + sinceCol + " " + consumedTotalCol + " " + newRateCol + " " + consumedRateCol + " " + etaCol + " " + lagCol
 
-	// Print header row 1
-	b.WriteString(green + row1 + reset + "\n")
+	// Print header row 1 (bright white)
+	b.WriteString(brightWhite + row1 + reset + "\n")
 
-	// Print header row 2
-	b.WriteString(green + row2Colored + reset + "\n")
+	// Print header row 2 (white with highlighted hotkeys)
+	b.WriteString(row2 + "\n")
 
 	// Header underline
 	totalWidth := groupWidth + topicWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + 8
