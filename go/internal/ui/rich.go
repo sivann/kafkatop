@@ -268,7 +268,11 @@ func (m *model) viewMain() string {
 		header += colorBrightWhite + formatLegendHotkey("[P]artitions", "P", "partitions") + ", "
 		header += colorBrightWhite + formatLegendHotkey("[T]ime Left", "T", "eta") + ", "
 		header += colorBrightWhite + formatLegendHotkey("[L]ag", "L", "lag") + ", "
+		header += colorBrightWhite + formatLegendHotkey("[N]ew topic", "N", "newrate") + ", "
 		header += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate")
+		
+		// Add scroll information
+		header += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑" + colorBrightWhite + "/" + colorBrightGreen + "↓" + colorBrightWhite + " or " + colorBrightGreen + "J" + colorBrightWhite + "/" + colorBrightGreen + "K"
 
 		if m.filterPattern != "" {
 			header += colorBrightWhite + fmt.Sprintf(" | Filter: %s", m.filterPattern)
@@ -335,7 +339,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "g", "o", "p", "t", "l", "c":
+	case "g", "o", "p", "t", "l", "c", "n":
 		newSortKey := ""
 		switch msg.String() {
 		case "g":
@@ -350,6 +354,8 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			newSortKey = "lag"
 		case "c":
 			newSortKey = "rate"
+		case "n":
+			newSortKey = "newrate"
 		}
 
 		if m.sortKey == newSortKey {
@@ -484,14 +490,30 @@ func (m *model) renderTable() string {
 
 	// Build 2-row header matching Python version
 	// Row 1 - top line (only for multi-line headers)
-	row1 := fmt.Sprintf("%-*s %-*s %*s %*s %*s %*s %*s %*s %*s",
+	consumedRateTopPlain := fmt.Sprintf("%*s", consRateWidth, "Consumed")
+	var consumedRateTopCol string
+	if m.sortKey == "rate" {
+		consumedRateTopCol = strings.Replace(consumedRateTopPlain, "Consumed", brightWhite+reverse+green+"C"+reset+brightWhite+"onsumed"+reset, 1)
+	} else {
+		consumedRateTopCol = strings.Replace(consumedRateTopPlain, "Consumed", brightWhite+green+"C"+brightWhite+"onsumed"+reset, 1)
+	}
+	
+	newRateTopPlain := fmt.Sprintf("%*s", newRateWidth, "New topic")
+	var newRateTopCol string
+	if m.sortKey == "newrate" {
+		newRateTopCol = strings.Replace(newRateTopPlain, "New topic", brightWhite+reverse+green+"N"+reset+brightWhite+"ew topic"+reset, 1)
+	} else {
+		newRateTopCol = strings.Replace(newRateTopPlain, "New topic", brightWhite+green+"N"+brightWhite+"ew topic"+reset, 1)
+	}
+	
+	row1 := fmt.Sprintf("%-*s %-*s %*s %*s %*s %s %s %*s %*s",
 		groupWidth, "",
 		topicWidth, "",
 		partsWidth, "",
 		sinceWidth, "Since",
 		consumedWidth, "Events",
-		newRateWidth, "New topic",
-		consRateWidth, "Consumed",
+		newRateTopCol,
+		consumedRateTopCol,
 		etaWidth, "",
 		lagWidth, "")
 
@@ -514,7 +536,8 @@ func (m *model) renderTable() string {
 	consumedTotalCol := strings.Replace(consumedTotalPlain, "Consumed", brightWhite+"Consumed"+reset, 1)
 	newRatePlain := fmt.Sprintf("%*s", newRateWidth, "evts/sec")
 	newRateCol := strings.Replace(newRatePlain, "evts/sec", brightWhite+"evts/sec"+reset, 1)
-	consumedRateCol := formatHeaderCol("Consumed", "C", "rate", consRateWidth, false)
+	consumedRatePlain := fmt.Sprintf("%*s", consRateWidth, "evts/sec")
+	consumedRateCol := strings.Replace(consumedRatePlain, "evts/sec", brightWhite+"evts/sec"+reset, 1)
 	etaCol := formatHeaderCol("Time Left", "T", "eta", etaWidth, false)
 	lagCol := formatHeaderCol("Lag", "L", "lag", lagWidth, false)
 
@@ -870,6 +893,15 @@ func (m *model) sortRowData(rows []*rowData) {
 		case "rate":
 			less = rows[i].consumptionRate < rows[j].consumptionRate
 			if rows[i].consumptionRate == rows[j].consumptionRate {
+				if rows[i].sortGroup != rows[j].sortGroup {
+					less = rows[i].sortGroup < rows[j].sortGroup
+				} else {
+					less = rows[i].sortTopic < rows[j].sortTopic
+				}
+			}
+		case "newrate":
+			less = rows[i].newRate < rows[j].newRate
+			if rows[i].newRate == rows[j].newRate {
 				if rows[i].sortGroup != rows[j].sortGroup {
 					less = rows[i].sortGroup < rows[j].sortGroup
 				} else {
