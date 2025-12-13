@@ -92,9 +92,11 @@ type model struct {
 	followMode      bool
 	showFullNumbers bool
 	lastUpdateTime  time.Time
+	startTime       time.Time // Start time for marquee animation
 }
 
 type tickMsg time.Time
+type animTickMsg time.Time // Fast ticker for marquee animation
 type dataMsg struct {
 	kd    *types.KafkaData
 	rates map[string]map[string]*types.RateStats
@@ -152,6 +154,7 @@ func ShowRich(admin *kafka.AdminClient, params *types.Params) error {
 		pollPeriods:      pollPeriods,
 		pollPeriodIdx:    pollPeriodIdx,
 		lastUpdateTime:   time.Now(),
+		startTime:        time.Now(), // Start time for marquee animation
 		selectedRowIdx:   -1, // Initialize to -1 so no row is selected by default
 	}
 
@@ -169,6 +172,7 @@ func (m model) Init() tea.Cmd {
 		m.spinner.Tick,
 		loadData(m.admin, m.params),
 		tickCmd(m.pollPeriod),
+		animTickCmd(), // Start animation ticker for marquee
 	)
 }
 
@@ -240,6 +244,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		m.spinner, cmd = m.spinner.Update(msg)
 		cmds = append(cmds, cmd)
+
+	case animTickMsg:
+		// Fast animation ticker for marquee - continue animating
+		cmds = append(cmds, animTickCmd())
 	}
 
 	if m.showFilter {
@@ -594,7 +602,7 @@ func (m *model) viewMain() string {
 			header2 += colorBrightWhite + fmt.Sprintf(" | Sorted: %s %s", m.sortKey, direction)
 		}
 		
-		// Count totals
+		// Count totals (will be shown in status bar)
 		rows := m.buildRowData()
 		totalGroups := make(map[string]bool)
 		totalTopics := make(map[string]bool)
@@ -602,12 +610,11 @@ func (m *model) viewMain() string {
 			totalGroups[row.sortGroup] = true
 			totalTopics[row.sortGroup+"|"+row.sortTopic] = true
 		}
-		header2 += colorBrightWhite + fmt.Sprintf(" | Groups: %d Topics: %d", len(totalGroups), len(totalTopics))
 
 		b.WriteString("\n" + colorBold + header1 + colorReset)
 		b.WriteString("\n" + colorBold + header2 + colorReset)
 
-		// Combined status line: viewport info + loading status + update time
+		// Combined status line: viewport info + loading status + update time + counts
 		var statusParts []string
 
 		viewportInfo := m.getViewportInfo()
@@ -623,7 +630,8 @@ func (m *model) viewMain() string {
 			statusParts = append(statusParts, fmt.Sprintf("%s %s", m.spinner.View(), loadingText))
 		}
 
-		// Add update time to status bar
+		// Add groups/topics count and update time to status bar (using counts calculated above)
+		statusParts = append(statusParts, fmt.Sprintf("Groups: %d Topics: %d", len(totalGroups), len(totalTopics)))
 		statusParts = append(statusParts, fmt.Sprintf("Updated: %s", updateTimeStr))
 
 		if len(statusParts) > 0 {
@@ -1122,19 +1130,82 @@ func (m *model) renderTable() string {
 	rows := m.buildRowData()
 	m.sortRowData(rows)
 
-	// Column widths - matching Python version
+	// Fixed column widths
 	const (
-		indicatorWidth = 2   // Indicator column for selected row
-		groupWidth    = 45  // Increased for longer group names
-		topicWidth    = 30  // Increased for longer topic names
-		partsWidth    = 10
-		sinceWidth    = 7
-		consumedWidth = 9
-		newRateWidth  = 9
-		consRateWidth = 9
-		etaWidth      = 13
-		lagWidth      = 11
+		indicatorWidth = 2
+		partsWidth     = 10
+		sinceWidth     = 7
+		consumedWidth  = 9
+		newRateWidth   = 9
+		consRateWidth  = 9
+		etaWidth       = 13
+		lagWidth       = 11
 	)
+
+	// Calculate available width for group/topic columns
+	// Total fixed width: indicator + parts + since + consumed + newRate + consRate + eta + lag + spacing
+	// Spaces: indicator-group, group-topic, topic-parts, parts-since, since-consumed, consumed-newRate, newRate-consRate, consRate-eta, eta-lag = 9 spaces
+	fixedWidth := indicatorWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + 9 // spaces between columns
+	availableWidth := m.width - fixedWidth - 2 // margin
+	
+	// Adaptive group/topic widths with minimums
+	minGroupWidth := 10
+	minTopicWidth := 10
+	maxGroupWidth := 45
+	maxTopicWidth := 30
+	
+	if availableWidth < minGroupWidth + minTopicWidth + 1 {
+		availableWidth = minGroupWidth + minTopicWidth + 1 // Ensure minimum space
+	}
+	
+	// Default widths
+	groupWidth := maxGroupWidth
+	topicWidth := maxTopicWidth
+	
+	// If terminal is narrow, shrink columns proportionally
+	if availableWidth < (maxGroupWidth + maxTopicWidth) {
+		// Shrink proportionally, but maintain minimums
+		// Reserve space for both columns with minimums
+		minTotalWidth := minGroupWidth + minTopicWidth + 1 // +1 for space between
+		if availableWidth < minTotalWidth {
+			// Terminal is too narrow, use minimums
+			groupWidth = minGroupWidth
+			topicWidth = minTopicWidth
+		} else {
+			// Shrink proportionally
+			ratio := float64(availableWidth) / float64(maxGroupWidth + maxTopicWidth)
+			groupWidth = int(float64(maxGroupWidth) * ratio)
+			topicWidth = int(float64(maxTopicWidth) * ratio)
+			
+			// Ensure minimums
+			if groupWidth < minGroupWidth {
+				groupWidth = minGroupWidth
+			}
+			if topicWidth < minTopicWidth {
+				topicWidth = minTopicWidth
+			}
+			
+			// Adjust if total exceeds available width
+			if groupWidth + topicWidth + 1 > availableWidth {
+				// Prioritize group width, shrink topic if needed
+				if groupWidth > minGroupWidth {
+					groupWidth = availableWidth - topicWidth - 1
+					if groupWidth < minGroupWidth {
+						groupWidth = minGroupWidth
+						topicWidth = availableWidth - groupWidth - 1
+						if topicWidth < minTopicWidth {
+							topicWidth = minTopicWidth
+						}
+					}
+				} else {
+					topicWidth = availableWidth - groupWidth - 1
+					if topicWidth < minTopicWidth {
+						topicWidth = minTopicWidth
+					}
+				}
+			}
+		}
+	}
 
 	var b strings.Builder
 
@@ -1302,24 +1373,46 @@ func (m *model) renderTable() string {
 	for i := startRow; i < endRow; i++ {
 		row := rows[i]
 
-		// Truncate long names
-		group := row.group
-		if len(group) > groupWidth {
-			group = group[:groupWidth-3] + "..."
-		}
-		topic := row.topic
-		if len(topic) > topicWidth {
-			topic = topic[:topicWidth-3] + "..."
-		}
+		// Marquee scrolling for long names
+		// Use the actual row index in the sorted array for consistent marquee per row
+		group := m.marqueeText(row.group, groupWidth, i)
+		topic := m.marqueeText(row.topic, topicWidth, i)
 
-		// Format values (plain text)
+		// Format values (plain text) and ensure they fit their column widths
 		partsStr := fmt.Sprintf("%d", row.parts)
+		if len(partsStr) > partsWidth {
+			partsStr = partsStr[:partsWidth]
+		}
+		
 		sinceStr := fmt.Sprintf("%.1fs", row.since)
+		if len(sinceStr) > sinceWidth {
+			sinceStr = sinceStr[:sinceWidth]
+		}
+		
 		consumedStr := formatNumber(m.showFullNumbers, row.consumed)
+		if len(consumedStr) > consumedWidth {
+			consumedStr = consumedStr[:consumedWidth]
+		}
+		
 		newRateStr := formatNumber(m.showFullNumbers, row.newRate)
+		if len(newRateStr) > newRateWidth {
+			newRateStr = newRateStr[:newRateWidth]
+		}
+		
 		consRateStr := formatNumber(m.showFullNumbers, row.consRate)
+		if len(consRateStr) > consRateWidth {
+			consRateStr = consRateStr[:consRateWidth]
+		}
+		
 		etaStr := row.eta
+		if len(etaStr) > etaWidth {
+			etaStr = etaStr[:etaWidth]
+		}
+		
 		lagStr := formatNumber(m.showFullNumbers, row.lag)
+		if len(lagStr) > lagWidth {
+			lagStr = lagStr[:lagWidth]
+		}
 		
 		// Check if this row matches search (highlight if search pattern exists, even if dialog is closed)
 		isSearchMatch := false
@@ -1357,18 +1450,55 @@ func (m *model) renderTable() string {
 		}
 		indicatorStr := fmt.Sprintf("%-*s", indicatorWidth, indicator)
 
-		// Build row with background spanning entire width
-		rowText := fmt.Sprintf("%s %-*s %-*s %*s %*s %*s %*s %*s %*s %*s %*s",
-			indicatorStr,
-			groupWidth, group,
-			topicWidth, topic,
-			partsWidth, partsStr,
-			sinceWidth, sinceStr,
-			consumedWidth, consumedStr,
-			newRateWidth, newRateStr,
-			consRateWidth, consRateStr,
-			etaWidth, etaStr,
-			lagWidth, lagStr)
+		// Ensure group and topic are exactly the right width
+		groupPadded := group
+		if len(group) > groupWidth {
+			groupPadded = group[:groupWidth]
+		} else if len(group) < groupWidth {
+			// Pad with spaces
+			groupPadded = group + strings.Repeat(" ", groupWidth-len(group))
+		}
+		
+		topicPadded := topic
+		if len(topic) > topicWidth {
+			topicPadded = topic[:topicWidth]
+		} else if len(topic) < topicWidth {
+			// Pad with spaces
+			topicPadded = topic + strings.Repeat(" ", topicWidth-len(topic))
+		}
+
+		// Ensure all strings fit their widths before formatting
+		partsStrPadded := partsStr
+		if len(partsStrPadded) < partsWidth {
+			partsStrPadded = strings.Repeat(" ", partsWidth-len(partsStrPadded)) + partsStrPadded
+		}
+		sinceStrPadded := sinceStr
+		if len(sinceStrPadded) < sinceWidth {
+			sinceStrPadded = strings.Repeat(" ", sinceWidth-len(sinceStrPadded)) + sinceStrPadded
+		}
+		consumedStrPadded := consumedStr
+		if len(consumedStrPadded) < consumedWidth {
+			consumedStrPadded = strings.Repeat(" ", consumedWidth-len(consumedStrPadded)) + consumedStrPadded
+		}
+		newRateStrPadded := newRateStr
+		if len(newRateStrPadded) < newRateWidth {
+			newRateStrPadded = strings.Repeat(" ", newRateWidth-len(newRateStrPadded)) + newRateStrPadded
+		}
+		consRateStrPadded := consRateStr
+		if len(consRateStrPadded) < consRateWidth {
+			consRateStrPadded = strings.Repeat(" ", consRateWidth-len(consRateStrPadded)) + consRateStrPadded
+		}
+		etaStrPadded := etaStr
+		if len(etaStrPadded) < etaWidth {
+			etaStrPadded = strings.Repeat(" ", etaWidth-len(etaStrPadded)) + etaStrPadded
+		}
+		lagStrPadded := lagStr
+		if len(lagStrPadded) < lagWidth {
+			lagStrPadded = strings.Repeat(" ", lagWidth-len(lagStrPadded)) + lagStrPadded
+		}
+
+		// Build row with background spanning entire width (no format specifiers, just concatenation)
+		rowText := indicatorStr + " " + groupPadded + " " + topicPadded + " " + partsStrPadded + " " + sinceStrPadded + " " + consumedStrPadded + " " + newRateStrPadded + " " + consRateStrPadded + " " + etaStrPadded + " " + lagStrPadded
 
 		// Apply background and colors
 		if bgCode != "" {
@@ -1379,17 +1509,35 @@ func (m *model) renderTable() string {
 			if isSelected {
 				indicatorColor = green // Green ">" for selected row
 			}
-			b.WriteString(fmt.Sprintf("%s%s%s %s%-*s%s %s%-*s%s %*s %*s %*s %*s %s%*s%s %s%*s%s %*s\n",
-				indicatorColor, indicatorStr, reset,
-				cyan, groupWidth, group, reset,
-				cyan, topicWidth, topic, reset,
-				partsWidth, partsStr,
-				sinceWidth, sinceStr,
-				consumedWidth, consumedStr,
-				newRateWidth, newRateStr,
-				rateColorCode, consRateWidth, consRateStr, reset,
-				etaColorCode, etaWidth, etaStr, reset,
-				lagWidth, lagStr))
+			// Ensure group and topic are exactly the right width
+			groupPadded := group
+			if len(group) > groupWidth {
+				groupPadded = group[:groupWidth]
+			} else if len(group) < groupWidth {
+				// Pad with spaces
+				groupPadded = group + strings.Repeat(" ", groupWidth-len(group))
+			}
+			
+			topicPadded := topic
+			if len(topic) > topicWidth {
+				topicPadded = topic[:topicWidth]
+			} else if len(topic) < topicWidth {
+				// Pad with spaces
+				topicPadded = topic + strings.Repeat(" ", topicWidth-len(topic))
+			}
+			
+			// Build row with colors (no format specifiers to avoid BADWIDTH errors)
+			rowLine := indicatorColor + indicatorStr + reset + " " +
+				cyan + groupPadded + reset + " " +
+				cyan + topicPadded + reset + " " +
+				partsStrPadded + " " +
+				sinceStrPadded + " " +
+				consumedStrPadded + " " +
+				newRateStrPadded + " " +
+				rateColorCode + consRateStrPadded + reset + " " +
+				etaColorCode + etaStrPadded + reset + " " +
+				lagStrPadded + "\n"
+			b.WriteString(rowLine)
 		}
 	}
 
@@ -1702,6 +1850,13 @@ func tickCmd(pollPeriod time.Duration) tea.Cmd {
 	})
 }
 
+func animTickCmd() tea.Cmd {
+	// Fast ticker for marquee animation: 200ms
+	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg {
+		return animTickMsg(t)
+	})
+}
+
 func loadData(admin *kafka.AdminClient, params *types.Params) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -1735,4 +1890,71 @@ func hashString(s string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(s))
 	return h.Sum32()
+}
+
+// marqueeText creates a scrolling marquee effect for long text
+// Always returns exactly 'width' characters
+func (m *model) marqueeText(text string, width int, rowIndex int) string {
+	if width <= 0 {
+		return ""
+	}
+	
+	if len(text) <= width {
+		// Text fits, pad to exact width with spaces
+		if len(text) < width {
+			return text + strings.Repeat(" ", width-len(text))
+		}
+		return text
+	}
+
+	// Time-based marquee: scroll left to right smoothly
+	// Each row has a different starting offset so they don't all scroll in sync
+	elapsed := time.Since(m.startTime)
+	
+	// Scroll speed: 1 character per 300ms (adjustable - slower is more readable)
+	scrollSpeed := time.Millisecond * 300
+	baseOffset := time.Duration(rowIndex) * scrollSpeed * 3 // Different starting point per row
+	totalElapsed := elapsed + baseOffset
+	
+	// Calculate scroll position in characters
+	charsScrolled := int(totalElapsed / scrollSpeed)
+	
+	// Scrollable range: from 0 to len(text) - width (so we can show full width)
+	maxScrollPos := len(text) - width
+	if maxScrollPos < 0 {
+		// Text is shorter than width (shouldn't happen, but handle it)
+		result := text
+		if len(result) < width {
+			return result + strings.Repeat(" ", width-len(result))
+		}
+		return result[:width]
+	}
+	
+	// Add a pause at the end (show beginning for a bit before restarting)
+	// Pause duration: show beginning for 2 seconds before restarting
+	pauseChars := width * 10 // Equivalent to 2 seconds at current speed
+	totalScrollable := maxScrollPos + 1 + pauseChars
+	
+	// Calculate scroll position with wrap-around
+	scrollPos := charsScrolled % totalScrollable
+	
+	// If we're in the pause phase (showing beginning)
+	if scrollPos > maxScrollPos {
+		// Show beginning of text
+		result := text[:width]
+		return result
+	}
+	
+	// Normal scrolling - show contiguous portion of text starting from scrollPos
+	// Ensure we don't go out of bounds
+	if scrollPos < 0 {
+		scrollPos = 0
+	}
+	if scrollPos > maxScrollPos {
+		scrollPos = maxScrollPos
+	}
+	
+	// Extract exactly 'width' characters starting from scrollPos
+	result := text[scrollPos : scrollPos+width]
+	return result
 }
