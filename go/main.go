@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/sivann/kafkatop/internal/kafka"
 	"github.com/sivann/kafkatop/internal/types"
@@ -34,10 +35,25 @@ func main() {
 	flag.BoolVar(&params.KafkaShowEmptyGroups, "all", false, "Show all groups (including those with no members)")
 	flag.StringVar(&params.ETACalculationMethod, "eta-method", "net-rate", "ETA calculation method: 'simple' (consumption rate only) or 'net-rate' (accounts for incoming rate)")
 	flag.IntVar(&params.KafkaMaxConcurrent, "max-concurrent", 10, "Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel)")
-	flag.BoolVar(&params.UseInitialBrokerOnly, "use-initial-broker-only", false, "Use only initial broker address, ignore advertised addresses (useful for port forwarding)")
+	flag.BoolVar(&params.UseInitialBrokerOnly, "use-initial-broker-only", false, "Use only initial broker address, ignore advertised addresses (useful for port forwarding to single-node Kafka; multi-node clusters may have limited functionality)")
+	dnsMapFlag := flag.String("dns-map", "", "Custom DNS mappings: hostname1=ip1,hostname2=ip2 (e.g., broker-1.v240.svc.cluster.local=10.227.1.111)")
 	showTiming := flag.Bool("timing", false, "Show timing/profiling information for lag calculation and exit")
 
 	flag.Parse()
+
+	// Parse DNS mappings
+	params.DNSMap = make(map[string]string)
+	if *dnsMapFlag != "" {
+		mappings := strings.Split(*dnsMapFlag, ",")
+		for _, mapping := range mappings {
+			parts := strings.SplitN(strings.TrimSpace(mapping), "=", 2)
+			if len(parts) == 2 {
+				hostname := strings.TrimSpace(parts[0])
+				ip := strings.TrimSpace(parts[1])
+				params.DNSMap[hostname] = ip
+			}
+		}
+	}
 
 	// Enable timing output if requested
 	if *showTiming {
@@ -64,7 +80,7 @@ func main() {
 	}
 
 	// Create Kafka admin client
-	admin, err := kafka.NewAdminClient(params.KafkaBroker, params.UseInitialBrokerOnly)
+	admin, err := kafka.NewAdminClient(params.KafkaBroker, params.UseInitialBrokerOnly, params.DNSMap)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to create admin client: %v\n", err)
 		os.Exit(1)

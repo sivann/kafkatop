@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"regexp"
 	"sort"
 	"sync"
@@ -58,6 +59,8 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 		groupIDs = append(groupIDs, groupID)
 	}
 
+	fmt.Fprintf(os.Stderr, "DEBUG CalcLag: After ListConsumerGroups, have %d groups to describe\n", len(groupIDs))
+
 	// Determine max concurrent for parallelization
 	maxConcurrent := params.KafkaMaxConcurrent
 	if maxConcurrent <= 0 {
@@ -72,34 +75,59 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 		return nil, fmt.Errorf("failed to describe consumer groups: %w", err)
 	}
 
+	fmt.Fprintf(os.Stderr, "DEBUG CalcLag: DescribeConsumerGroups returned %d groups\n", len(describedGroups))
+
 	// Update groups with description info and filter by state
+	emptyFilteredCount := 0
 	for groupID, group := range describedGroups {
 		if !params.KafkaShowEmptyGroups && group.State == types.StateEmpty {
 			delete(groups, groupID)
+			emptyFilteredCount++
 			continue
 		}
 		groups[groupID] = group
 	}
 
+	if emptyFilteredCount > 0 {
+		fmt.Fprintf(os.Stderr, "DEBUG CalcLag: Filtered out %d empty groups\n", emptyFilteredCount)
+	}
+	fmt.Fprintf(os.Stderr, "DEBUG CalcLag: After filtering, have %d groups for offset fetching\n", len(groups))
+
 	kd.ConsumerGroups = groups
 
 	// Get consumer group offsets (parallelized if configured)
 	t2 := time.Now()
-	if maxConcurrent <= 1 {
+		if maxConcurrent <= 1 {
 		// Sequential execution
+		successCount := 0
+		errorCount := 0
+		emptyCount := 0
 		for groupID := range groups {
 			offsets, err := admin.ListConsumerGroupOffsetsWithClient(ctx, groupID, nil)
 			if err != nil {
 				// Skip groups with errors
+				errorCount++
+				if errorCount <= 5 { // Log first 5 errors
+					fmt.Fprintf(os.Stderr, "DEBUG: Failed to get offsets for group %s: %v\n", groupID, err)
+				}
 				continue
+			}
+			successCount++
+			if len(offsets.TopicOffsets) == 0 {
+				emptyCount++
 			}
 			kd.GroupOffsets[groupID] = offsets
 		}
+		fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n", 
+			len(groups), successCount, successCount-emptyCount, emptyCount, errorCount)
 	} else {
 		// Parallel execution with semaphore
 		semaphore := make(chan struct{}, maxConcurrent)
 		var wg sync.WaitGroup
 		var mu sync.Mutex
+		var successCount int
+		var errorCount int
+		var emptyCount int
 
 		for groupID := range groups {
 			wg.Add(1)
@@ -112,15 +140,29 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 				offsets, err := admin.ListConsumerGroupOffsetsWithClient(ctx, gid, nil)
 				if err != nil {
 					// Skip groups with errors
+					// Log errors (with mutex to avoid interleaving)
+					mu.Lock()
+					errorCount++
+					// Only log first few errors to avoid spam
+					if errorCount <= 5 {
+						fmt.Fprintf(os.Stderr, "DEBUG: Failed to get offsets for group %s: %v\n", gid, err)
+					}
+					mu.Unlock()
 					return
 				}
 
 				mu.Lock()
+				successCount++
+				if len(offsets.TopicOffsets) == 0 {
+					emptyCount++
+				}
 				kd.GroupOffsets[gid] = offsets
 				mu.Unlock()
 			}(groupID)
 		}
 		wg.Wait()
+		fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n", 
+			len(groups), successCount, successCount-emptyCount, emptyCount, errorCount)
 	}
 	stats.ListGroupOffsets = time.Since(t2)
 	kd.GroupOffsetsTS = time.Now()
@@ -128,12 +170,14 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 	// Build topics with groups map
 	// Union partitions from all groups that consume each topic
 	t3 := time.Now()
+	totalTopicsSeen := 0
 	for groupID, offsets := range kd.GroupOffsets {
 		if len(offsets.TopicOffsets) == 0 {
 			continue
 		}
 
 		for topic, partOffsets := range offsets.TopicOffsets {
+			totalTopicsSeen++
 			if _, exists := kd.TopicsWithGroups[topic]; !exists {
 				// First time seeing this topic - initialize with partitions from this group
 				partitions := make([]int32, 0, len(partOffsets))
@@ -161,6 +205,8 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 			kd.TopicsWithGroups[topic].Groups = append(kd.TopicsWithGroups[topic].Groups, groupID)
 		}
 	}
+	// Debug output (always to stderr for visibility)
+	fmt.Fprintf(os.Stderr, "DEBUG CalcLag: Found %d unique topics from %d groups with offsets\n", len(kd.TopicsWithGroups), len(kd.GroupOffsets))
 	stats.BuildTopicsMap = time.Since(t3)
 
 	// Get topic offsets (parallelized if configured)

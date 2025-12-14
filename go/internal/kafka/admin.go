@@ -28,18 +28,35 @@ type AdminClient struct {
 	useInitialBrokerOnly bool          // If true, force all operations to use initial broker
 }
 
-// brokerResolver is a custom resolver that always resolves to the initial broker
-type brokerResolver struct {
-	initialBrokerIP net.IPAddr
+// dnsMapResolver is a custom resolver that uses DNS mappings
+type dnsMapResolver struct {
+	dnsMap map[string]string
 }
 
-func (r *brokerResolver) LookupBrokerIPAddr(ctx context.Context, broker kafka.Broker) ([]net.IPAddr, error) {
-	// Always return the initial broker IP, ignoring the requested broker
-	return []net.IPAddr{r.initialBrokerIP}, nil
+func (r *dnsMapResolver) LookupBrokerIPAddr(ctx context.Context, broker kafka.Broker) ([]net.IPAddr, error) {
+	// Check if we have a custom mapping for this broker's host
+	if ipStr, exists := r.dnsMap[broker.Host]; exists {
+		ip := net.ParseIP(ipStr)
+		if ip != nil {
+			return []net.IPAddr{{IP: ip}}, nil
+		}
+	}
+	// Fall back to normal DNS resolution
+	resolver := &net.Resolver{}
+	addrs, err := resolver.LookupIPAddr(ctx, broker.Host)
+	if err != nil {
+		return nil, err
+	}
+	return addrs, nil
 }
 
 // NewAdminClient creates a new Kafka admin client
-func NewAdminClient(broker string, useInitialBrokerOnly bool) (*AdminClient, error) {
+// When useInitialBrokerOnly is true, all connections are redirected to the initial broker.
+// This works well for single-node Kafka deployments accessed via port forwarding.
+// For multi-node clusters, some operations (like OffsetFetch to coordinators) may fail
+// because coordinators may not be accessible through the port-forwarded broker.
+// When dnsMap is provided, custom DNS resolution is used to map hostnames to IPs.
+func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]string) (*AdminClient, error) {
 	// Add default port if not specified
 	if matched, _ := regexp.MatchString(`:\d+$`, broker); !matched {
 		broker = broker + ":9092"
@@ -49,6 +66,12 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool) (*AdminClient, err
 	conn, err := kafka.Dial("tcp", broker)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to broker %s: %w", broker, err)
+	}
+
+	// Create a custom resolver if DNS mappings are provided
+	var customResolver kafka.BrokerResolver
+	if len(dnsMap) > 0 {
+		customResolver = &dnsMapResolver{dnsMap: dnsMap}
 	}
 
 	// Create a single shared client for all operations
@@ -63,22 +86,8 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool) (*AdminClient, err
 			brokerPort = broker[idx+1:]
 		}
 		
-		// Resolve the initial broker IP address
-		initialIPs, err := net.LookupIP(brokerHost)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve initial broker %s: %w", brokerHost, err)
-		}
-		if len(initialIPs) == 0 {
-			return nil, fmt.Errorf("no IP addresses found for initial broker %s", brokerHost)
-		}
-		
-		// Use the first IP address
-		initialBrokerIP := net.IPAddr{IP: initialIPs[0]}
-		
-		// Create custom resolver that always returns the initial broker IP
-		customResolver := &brokerResolver{initialBrokerIP: initialBrokerIP}
-		
-		// Custom dialer that always connects to the initial broker
+		// Custom dialer that always connects to the initial broker when useInitialBrokerOnly is true
+		// When DNS mapping is provided, it's handled by the Resolver instead
 		customDial := func(ctx context.Context, network, address string) (net.Conn, error) {
 			// Always connect to the initial broker, ignoring the requested address
 			return (&net.Dialer{
@@ -87,12 +96,20 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool) (*AdminClient, err
 			}).DialContext(ctx, network, brokerHost+":"+brokerPort)
 		}
 		
-		// Create transport with custom resolver and dialer
+		// Create transport with custom dialer and resolver
+		// The Transport will still create pools per broker ID, but all connections
+		// will go to the same broker via the custom Dial function
+		// Set MetadataTTL to 0 to disable caching and always get fresh metadata
+		// Leave MetadataTopics empty to get metadata for all topics
 		customTransport := &kafka.Transport{
-			Resolver:   customResolver,
-			Dial:       customDial,
-			DialTimeout: 5 * time.Second,
-			IdleTimeout: 30 * time.Second,
+			Dial:          customDial,
+			DialTimeout:   5 * time.Second,
+			IdleTimeout:   30 * time.Second,
+			MetadataTTL:   0,        // Disable metadata caching to ensure fresh data
+			MetadataTopics: nil,     // nil/empty means get metadata for all topics
+		}
+		if customResolver != nil {
+			customTransport.Resolver = customResolver
 		}
 		
 		sharedClient = &kafka.Client{
@@ -101,9 +118,14 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool) (*AdminClient, err
 			Transport: customTransport,
 		}
 	} else {
+		transport := &kafka.Transport{}
+		if customResolver != nil {
+			transport.Resolver = customResolver
+		}
 		sharedClient = &kafka.Client{
-			Addr:    kafka.TCP(broker),
-			Timeout: 10 * time.Second,
+			Addr:      kafka.TCP(broker),
+			Timeout:   10 * time.Second,
+			Transport: transport,
 		}
 	}
 
@@ -113,8 +135,8 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool) (*AdminClient, err
 		kgo.RequestTimeoutOverhead(10 * time.Second),
 	}
 	
-	if useInitialBrokerOnly {
-		// Use a custom dialer that always connects to the initial broker
+	// Create custom dialer for franz-go that handles DNS mapping and/or initial broker only
+	if useInitialBrokerOnly || len(dnsMap) > 0 {
 		brokerHost := broker
 		brokerPort := "9092"
 		if idx := strings.LastIndex(broker, ":"); idx >= 0 {
@@ -123,8 +145,24 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool) (*AdminClient, err
 		}
 		
 		franzOpts = append(franzOpts, kgo.Dialer(func(ctx context.Context, network, address string) (net.Conn, error) {
-			// Always connect to the initial broker
-			return (&net.Dialer{}).DialContext(ctx, network, brokerHost+":"+brokerPort)
+			if useInitialBrokerOnly {
+				// Always connect to the initial broker
+				return (&net.Dialer{}).DialContext(ctx, network, brokerHost+":"+brokerPort)
+			}
+			
+			// Use DNS mapping if available (only when not using initial broker only)
+			if len(dnsMap) > 0 {
+				// Parse address (format: host:port)
+				host, port, err := net.SplitHostPort(address)
+				if err == nil {
+					if mappedIP, exists := dnsMap[host]; exists {
+						// Use mapped IP instead
+						address = net.JoinHostPort(mappedIP, port)
+					}
+				}
+			}
+			
+			return (&net.Dialer{}).DialContext(ctx, network, address)
 		}))
 	}
 	
@@ -192,6 +230,11 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 	if err != nil {
 		return nil, fmt.Errorf("failed to list consumer groups: %w", err)
 	}
+	
+	// Debug: log how many groups we got
+	if a.useInitialBrokerOnly {
+		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Got %d groups from ListGroups\n", len(response.Groups))
+	}
 
 	groups := make(map[string]*types.ConsumerGroup)
 
@@ -203,6 +246,11 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 		excludePattern = regexp.MustCompile(params.KafkaGroupExcludePattern)
 	}
 
+	matchedCount := 0
+	excludedCount := 0
+	duplicateCount := 0
+	sampleGroups := make([]string, 0, 10)
+	
 	for _, group := range response.Groups {
 		groupID := group.GroupID
 
@@ -211,7 +259,19 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 			continue
 		}
 		if excludePattern != nil && excludePattern.MatchString(groupID) {
+			excludedCount++
 			continue
+		}
+
+		// Check if this group already exists (duplicate)
+		if _, exists := groups[groupID]; exists {
+			duplicateCount++
+			continue
+		}
+
+		matchedCount++
+		if len(sampleGroups) < 10 {
+			sampleGroups = append(sampleGroups, groupID)
 		}
 
 		groups[groupID] = &types.ConsumerGroup{
@@ -219,6 +279,12 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 			State:   types.StateStable,
 			Topics:  make(map[string][]int32),
 		}
+	}
+	
+	if a.useInitialBrokerOnly {
+		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Pattern matched %d unique groups (excluded %d, duplicates skipped %d). Sample: %v\n", 
+			matchedCount, excludedCount, duplicateCount, sampleGroups)
+		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Actually returning %d groups from map\n", len(groups))
 	}
 
 	return groups, nil
@@ -452,11 +518,26 @@ func (a *AdminClient) ListConsumerGroupOffsetsWithClient(ctx context.Context, gr
 	}
 
 	// Use OffsetFetch to get committed offsets for the group
-	response, err := client.OffsetFetch(ctx, &kafka.OffsetFetchRequest{
+	// If useInitialBrokerOnly is enabled, explicitly specify the broker address
+	// to ensure the request goes through the initial broker (which can forward to coordinators)
+	req := &kafka.OffsetFetchRequest{
 		GroupID: groupID,
-	})
+	}
+	if a.useInitialBrokerOnly {
+		req.Addr = kafka.TCP(a.broker)
+	}
+	response, err := client.OffsetFetch(ctx, req)
 	if err != nil {
+		// Debug: log errors when useInitialBrokerOnly is enabled
+		if a.useInitialBrokerOnly {
+			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Failed for group %s: %v\n", groupID, err)
+		}
 		return nil, fmt.Errorf("failed to fetch offsets for group %s: %w", groupID, err)
+	}
+	
+	// Debug: check if response is empty
+	if a.useInitialBrokerOnly && len(response.Topics) == 0 {
+		fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Group %s returned empty topics\n", groupID)
 	}
 
 	offsets := &types.ConsumerGroupOffset{
@@ -515,6 +596,13 @@ func (a *AdminClient) ListTopicOffsetsWithClient(ctx context.Context, topic stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to list offsets for topic %s: %w", topic, err)
 	}
+	
+	// Debug: log if we got incomplete results
+	if a.useInitialBrokerOnly {
+		if topicOffsets, ok := response.Topics[topic]; ok {
+			fmt.Fprintf(os.Stderr, "DEBUG ListTopicOffsets: Topic %s requested %d partitions, got %d\n", topic, len(partitions), len(topicOffsets))
+		}
+	}
 
 	// Extract offsets from response
 	if topicOffsets, ok := response.Topics[topic]; ok {
@@ -530,36 +618,55 @@ func (a *AdminClient) ListTopicOffsetsWithClient(ctx context.Context, topic stri
 
 // ListTopics lists all topics in the cluster
 func (a *AdminClient) ListTopics(ctx context.Context) (map[string]*types.TopicInfo, error) {
-	conn, err := kafka.Dial("tcp", a.broker)
+	// Use the client's Metadata API which uses the custom Transport when useInitialBrokerOnly is enabled
+	// Request metadata for all topics by passing nil Topics
+	metadataResp, err := a.client.Metadata(ctx, &kafka.MetadataRequest{
+		Addr:   kafka.TCP(a.broker),
+		Topics: nil, // nil means get metadata for all topics
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to broker: %w", err)
-	}
-	defer conn.Close()
-
-	partitions, err := conn.ReadPartitions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read partitions: %w", err)
+		return nil, fmt.Errorf("failed to get metadata: %w", err)
 	}
 
 	topics := make(map[string]*types.TopicInfo)
 
-	for _, partition := range partitions {
-		topic := partition.Topic
-		if _, exists := topics[topic]; !exists {
-			topics[topic] = &types.TopicInfo{
-				Name:       topic,
+	// Debug: log how many topics we got from metadata (only if useInitialBrokerOnly)
+	if a.useInitialBrokerOnly {
+		fmt.Fprintf(os.Stderr, "DEBUG ListTopics: Metadata API returned %d topics\n", len(metadataResp.Topics))
+	}
+
+	// Build topics map from metadata response
+	for _, topic := range metadataResp.Topics {
+		if topic.Error != nil {
+			// Log but continue - some topics might have errors
+			fmt.Fprintf(os.Stderr, "DEBUG: Topic %s has error: %v\n", topic.Name, topic.Error)
+			continue
+		}
+		
+		topicName := topic.Name
+		if _, exists := topics[topicName]; !exists {
+			topics[topicName] = &types.TopicInfo{
+				Name:       topicName,
 				Partitions: 0,
 				PartInfo:   []types.PartitionInfo{},
 			}
 		}
-		topics[topic].Partitions++
-
-		topics[topic].PartInfo = append(topics[topic].PartInfo, types.PartitionInfo{
-			ID:       int32(partition.ID),
-			Leader:   int32(partition.Leader.ID),
-			Replicas: convertToInt32Slice(partition.Replicas),
-			ISRs:     convertToInt32Slice(partition.Isr),
-		})
+		
+		// Process partitions for this topic
+		for _, partition := range topic.Partitions {
+			if partition.Error != nil {
+				// Skip partitions with errors
+				continue
+			}
+			
+			topics[topicName].Partitions++
+			topics[topicName].PartInfo = append(topics[topicName].PartInfo, types.PartitionInfo{
+				ID:       int32(partition.ID),
+				Leader:   int32(partition.Leader.ID),
+				Replicas: convertToInt32Slice(partition.Replicas),
+				ISRs:     convertToInt32Slice(partition.Isr),
+			})
+		}
 	}
 
 	return topics, nil
