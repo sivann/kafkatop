@@ -4,7 +4,7 @@
 
 `kafkatop` provides a simple, yet powerful, way to quickly view the health of your Kafka consumers and topics. It helps you identify bottlenecks and diagnose issues with consumer lag in real-time, directly from your terminal.
 
-![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop0.png)
+![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-main.png)
 *Anonymized topics and groups*
 
 ## 🚀 Status: Go Version is Now Complete!
@@ -343,17 +343,14 @@ $C_v$ and PAR are complementary:
 ## Screenshots
 
 
-| ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop2.png) |
+| ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-topic-details.png) |
 |:--:|
-| *In the screenshot above (anonymized topics/groups), highlighted rows indicate the ETA to consume all the lag, with the consuming rate of the last period, is > 1 minute. Red cell fonts on the consumption rate  indicate consumption rate is low. Cell colors indicate severity.* |
+| *Topic details* with partition rates and hottness. Cell colors indicate speed.* |
 
-| ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop3.png) |
+| ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-help.png) |
 |:--:|
-| *A healthy system.* |
+| *Help system.* |
 
-| ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop4-summary.png) |
-|:--:| 
-| *A summary of (anonymized) groups, topics, partitions, lag and consumer group states. The lag is the median lag accross all topic partitions.* |
 
 
 ## JSON output
