@@ -3,9 +3,11 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"reflect"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,16 +19,27 @@ import (
 
 // AdminClient wraps Kafka admin operations
 type AdminClient struct {
-	broker      string
-	conn        *kafka.Conn
-	client      *kafka.Client // Shared client for API calls
-	clientPool  chan *kafka.Client // Pool of clients for parallel operations
-	franzClient *kgo.Client   // franz-go client for DescribeConfigs API
-	franzAdmin  *kadm.Client  // franz-go admin client
+	broker              string
+	conn                *kafka.Conn
+	client              *kafka.Client // Shared client for API calls
+	clientPool          chan *kafka.Client // Pool of clients for parallel operations
+	franzClient         *kgo.Client   // franz-go client for DescribeConfigs API
+	franzAdmin          *kadm.Client  // franz-go admin client
+	useInitialBrokerOnly bool          // If true, force all operations to use initial broker
+}
+
+// brokerResolver is a custom resolver that always resolves to the initial broker
+type brokerResolver struct {
+	initialBrokerIP net.IPAddr
+}
+
+func (r *brokerResolver) LookupBrokerIPAddr(ctx context.Context, broker kafka.Broker) ([]net.IPAddr, error) {
+	// Always return the initial broker IP, ignoring the requested broker
+	return []net.IPAddr{r.initialBrokerIP}, nil
 }
 
 // NewAdminClient creates a new Kafka admin client
-func NewAdminClient(broker string) (*AdminClient, error) {
+func NewAdminClient(broker string, useInitialBrokerOnly bool) (*AdminClient, error) {
 	// Add default port if not specified
 	if matched, _ := regexp.MatchString(`:\d+$`, broker); !matched {
 		broker = broker + ":9092"
@@ -40,16 +53,82 @@ func NewAdminClient(broker string) (*AdminClient, error) {
 
 	// Create a single shared client for all operations
 	// kafka.Client is thread-safe and can handle concurrent requests efficiently
-	sharedClient := &kafka.Client{
-		Addr:    kafka.TCP(broker),
-		Timeout: 10 * time.Second,
+	var sharedClient *kafka.Client
+	if useInitialBrokerOnly {
+		// Parse the initial broker address
+		brokerHost := broker
+		brokerPort := "9092"
+		if idx := strings.LastIndex(broker, ":"); idx >= 0 {
+			brokerHost = broker[:idx]
+			brokerPort = broker[idx+1:]
+		}
+		
+		// Resolve the initial broker IP address
+		initialIPs, err := net.LookupIP(brokerHost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve initial broker %s: %w", brokerHost, err)
+		}
+		if len(initialIPs) == 0 {
+			return nil, fmt.Errorf("no IP addresses found for initial broker %s", brokerHost)
+		}
+		
+		// Use the first IP address
+		initialBrokerIP := net.IPAddr{IP: initialIPs[0]}
+		
+		// Create custom resolver that always returns the initial broker IP
+		customResolver := &brokerResolver{initialBrokerIP: initialBrokerIP}
+		
+		// Custom dialer that always connects to the initial broker
+		customDial := func(ctx context.Context, network, address string) (net.Conn, error) {
+			// Always connect to the initial broker, ignoring the requested address
+			return (&net.Dialer{
+				Timeout:   3 * time.Second,
+				DualStack: true,
+			}).DialContext(ctx, network, brokerHost+":"+brokerPort)
+		}
+		
+		// Create transport with custom resolver and dialer
+		customTransport := &kafka.Transport{
+			Resolver:   customResolver,
+			Dial:       customDial,
+			DialTimeout: 5 * time.Second,
+			IdleTimeout: 30 * time.Second,
+		}
+		
+		sharedClient = &kafka.Client{
+			Addr:      kafka.TCP(broker),
+			Timeout:   10 * time.Second,
+			Transport: customTransport,
+		}
+	} else {
+		sharedClient = &kafka.Client{
+			Addr:    kafka.TCP(broker),
+			Timeout: 10 * time.Second,
+		}
 	}
 
 	// Create franz-go client for DescribeConfigs API (pure Go, no cgo)
-	franzClient, err := kgo.NewClient(
+	franzOpts := []kgo.Opt{
 		kgo.SeedBrokers(broker),
-		kgo.RequestTimeoutOverhead(10*time.Second),
-	)
+		kgo.RequestTimeoutOverhead(10 * time.Second),
+	}
+	
+	if useInitialBrokerOnly {
+		// Use a custom dialer that always connects to the initial broker
+		brokerHost := broker
+		brokerPort := "9092"
+		if idx := strings.LastIndex(broker, ":"); idx >= 0 {
+			brokerHost = broker[:idx]
+			brokerPort = broker[idx+1:]
+		}
+		
+		franzOpts = append(franzOpts, kgo.Dialer(func(ctx context.Context, network, address string) (net.Conn, error) {
+			// Always connect to the initial broker
+			return (&net.Dialer{}).DialContext(ctx, network, brokerHost+":"+brokerPort)
+		}))
+	}
+	
+	franzClient, err := kgo.NewClient(franzOpts...)
 	if err != nil {
 		// If franz-go client creation fails, continue without it (non-fatal)
 		// We'll just return empty configs
@@ -62,12 +141,13 @@ func NewAdminClient(broker string) (*AdminClient, error) {
 	}
 
 	return &AdminClient{
-		broker:     broker,
-		conn:       conn,
-		client:     sharedClient,
-		clientPool: nil, // No longer using a pool
-		franzClient: franzClient,
-		franzAdmin:  franzAdmin,
+		broker:              broker,
+		conn:                conn,
+		client:              sharedClient,
+		clientPool:          nil, // No longer using a pool
+		franzClient:         franzClient,
+		franzAdmin:          franzAdmin,
+		useInitialBrokerOnly: useInitialBrokerOnly,
 	}, nil
 }
 

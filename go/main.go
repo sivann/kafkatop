@@ -34,6 +34,7 @@ func main() {
 	flag.BoolVar(&params.KafkaShowEmptyGroups, "all", false, "Show all groups (including those with no members)")
 	flag.StringVar(&params.ETACalculationMethod, "eta-method", "net-rate", "ETA calculation method: 'simple' (consumption rate only) or 'net-rate' (accounts for incoming rate)")
 	flag.IntVar(&params.KafkaMaxConcurrent, "max-concurrent", 10, "Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel)")
+	flag.BoolVar(&params.UseInitialBrokerOnly, "use-initial-broker-only", false, "Use only initial broker address, ignore advertised addresses (useful for port forwarding)")
 	showTiming := flag.Bool("timing", false, "Show timing/profiling information for lag calculation and exit")
 
 	flag.Parse()
@@ -63,7 +64,7 @@ func main() {
 	}
 
 	// Create Kafka admin client
-	admin, err := kafka.NewAdminClient(params.KafkaBroker)
+	admin, err := kafka.NewAdminClient(params.KafkaBroker, params.UseInitialBrokerOnly)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to create admin client: %v\n", err)
 		os.Exit(1)
