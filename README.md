@@ -148,7 +148,7 @@ Usage of ./kafkatop:
   -debug
     	Enable debug output
   -dns-map string
-    	Custom DNS mappings: hostname1=ip1,hostname2=ip2 (e.g., broker-1.v240.svc.cluster.local=10.227.1.111)
+    	Custom DNS mappings: hostname1=ip1,hostname2=ip2 (e.g., broker-1.svc.cluster.local=10.227.1.111)
   -eta-method string
     	ETA calculation method: 'simple' (consumption rate only) or 'net-rate' (accounts for incoming rate) (default "net-rate")
   -group-exclude-pattern string
