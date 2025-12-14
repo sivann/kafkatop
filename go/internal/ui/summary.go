@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 
 	"github.com/sivann/kafkatop/internal/kafka"
 	"github.com/sivann/kafkatop/internal/types"
@@ -67,6 +68,13 @@ func ShowSummary(admin *kafka.AdminClient, params *types.Params) error {
 	// Header underline
 	fmt.Println("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
 
+	// Helper function to hash strings for anonymization
+	hashString := func(s string) uint32 {
+		h := fnv.New32a()
+		h.Write([]byte(s))
+		return h.Sum32()
+	}
+
 	// Print lag summary for each group
 	for groupID, groupLags := range kd.GroupLags {
 		state := kd.ConsumerGroups[groupID].State
@@ -75,6 +83,12 @@ func ShowSummary(admin *kafka.AdminClient, params *types.Params) error {
 		stateColor := green
 		if state == types.StateEmpty {
 			stateColor = red
+		}
+
+		// Apply anonymization if requested
+		displayGroupID := groupID
+		if params.Anonymize {
+			displayGroupID = fmt.Sprintf("group %06d", hashString(groupID)%1000000)
 		}
 
 		for topic, lag := range groupLags {
@@ -86,12 +100,18 @@ func ShowSummary(admin *kafka.AdminClient, params *types.Params) error {
 				totalParts = len(topicInfo.Partitions)
 			}
 
+			// Apply anonymization if requested
+			displayTopic := topic
+			if params.Anonymize {
+				displayTopic = fmt.Sprintf("topic %06d", hashString(topic)%1000000)
+			}
+
 			// Format state like Python: "ConsumerGroupState.EMPTY"
 			stateStr := fmt.Sprintf("ConsumerGroupState.%s", state)
 
 			fmt.Printf("%s%-*s%s %s%-*s%s %*s %*d %s%-*s%s\n",
-				cyan, groupWidth, groupID, reset,
-				cyan, topicWidth, topic, reset,
+				cyan, groupWidth, displayGroupID, reset,
+				cyan, topicWidth, displayTopic, reset,
 				partsWidth, fmt.Sprintf("%d/%d", partsWithConsumers, totalParts),
 				lagWidth, lag.Median,
 				stateColor, stateWidth, stateStr, reset)

@@ -7,11 +7,11 @@
 ![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop0.png)
 *Anonymized topics and groups*
 
-## 🚀 Status: Go Version is Now Primary!
+## 🚀 Status: Go Version is Now Complete!
 
-The Go rewrite is complete and is now the **primary version**. Both versions are available:
+The Go rewrite is complete and will be the one receiving updates from now on.
 
-- **Go version** (✅ **recommended**): Static binary, instant startup, works on older systems (CentOS 7+), feature-complete
+- **Go version** (✅ **recommended**): Static binary, instant startup, multi-arch, works on older systems (CentOS 7+), feature-complete
 - **Python version** (legacy): Original implementation, maintained for compatibility
 
 ## Features
@@ -140,45 +140,49 @@ kafkatop --topicinfo-parts
 ## Command Line Options
 
 ```
-Usage: kafkatop [options]
-
-Options:
-  --kafka-broker string
-        Broker address (host:port) (default: "localhost:9092")
-  --text
-        Disable rich text and color
-  --poll-period int
-        Poll interval (sec) for rate calculations (default: 5)
-  --poll-iterations int
-        Refresh count before exiting (-1 for infinite) (default: 15)
-  --group-exclude-pattern string
-        Exclude groups matching regex
-  --group-filter-pattern string
-        Filter groups by regex
-  --status
-        Report health status in JSON and exit
-  --summary
-        Display consumer groups, states, topics, partitions, and lags summary
-  --summary-json
-        Display consumer groups, states, topics, partitions, and lags summary in JSON and exit
-  --topicinfo
-        Show topic metadata only (fast)
-  --topicinfo-parts
-        Show topic and partition metadata
-  --only-issues
-        Show only groups with high lag/issues
-  --anonymize
-        Anonymize topic and group names
-  --all
-        Show all groups (including those with no members)
-  --eta-method string
-        ETA calculation method: 'simple' (consumption rate only) or 'net-rate' (accounts for incoming rate) (default: "net-rate")
-  --max-concurrent int
-        Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel) (default: 10)
-  --timing
-        Show timing/profiling information for lag calculation and exit
-  --version
-        Show version and exit
+Usage of ./kafkatop:
+  -all
+    	Show all groups (including those with no members)
+  -anonymize
+    	Anonymize topic and group names
+  -debug
+    	Enable debug output
+  -dns-map string
+    	Custom DNS mappings: hostname1=ip1,hostname2=ip2 (e.g., broker-1.v240.svc.cluster.local=10.227.1.111)
+  -eta-method string
+    	ETA calculation method: 'simple' (consumption rate only) or 'net-rate' (accounts for incoming rate) (default "net-rate")
+  -group-exclude-pattern string
+    	Exclude groups matching regex
+  -group-filter-pattern string
+    	Filter groups by regex
+  -kafka-broker string
+    	Broker address (host:port) (default "localhost:9092")
+  -max-concurrent int
+    	Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel) (default 10)
+  -only-issues
+    	Show only groups with high lag/issues
+  -poll-iterations int
+    	Refresh count before exiting (-1 for infinite) (default 15)
+  -poll-period int
+    	Poll interval (sec) for rate calculations (default 5)
+  -status
+    	Report health as JSON and exit
+  -summary
+    	Display consumer groups, states, topics, partitions, and lags summary
+  -summary-json
+    	Display consumer groups, states, topics, partitions, and lags summary in JSON and exit
+  -text
+    	Disable rich text and color
+  -timing
+    	Show timing/profiling information for lag calculation and exit
+  -topicinfo
+    	Show topic metadata only (fast)
+  -topicinfo-parts
+    	Show topic and partition metadata
+  -use-initial-broker-only
+    	Use only initial broker address, ignore advertised addresses (useful for port forwarding to single-node Kafka; multi-node clusters may have limited functionality)
+  -version
+    	Show version and exit
 ```
 
 ## Interactive TUI Controls
@@ -229,10 +233,10 @@ Rows are highlighted based on the `RemainingSec` value from the ETA calculation:
 - **ETA < 2 minutes** (`RemainingSec` 60-119): Yellow ETA color, no highlight
 
 #### ⚠️ **Highlighted** (Issues):
-- **ETA 2-10 minutes** (`RemainingSec` 120-599): Yellow ETA color, **ROW HIGHLIGHTED**
-- **ETA 10m-2h** (`RemainingSec` 600-7199): Magenta ETA color, **ROW HIGHLIGHTED**
-- **ETA > 2h** (`RemainingSec` >= 7200): Red ETA color, **ROW HIGHLIGHTED**
-- **No consumption** (`RemainingSec` == -1): Red ETA color, **ROW HIGHLIGHTED** (only if `EventsArrivalRate > 1.0` OR `lag > 1000`)
+- **ETA 2-10 minutes** (`RemainingSec` 120-599): Yellow ETA color **highlighted**
+- **ETA 10m-2h** (`RemainingSec` 600-7199): Magenta ETA color, **highlighted**
+- **ETA > 2h** (`RemainingSec` >= 7200): Red ETA color, **highlighted**
+- **No consumption** (`RemainingSec` == -1): Red ETA color, **highlighted** (only if `EventsArrivalRate > 1.0` OR `lag > 1000`)
 
 ### 2. ETA Calculation Methods
 
@@ -323,7 +327,7 @@ The PAR tells you "How much harder is my single busiest consumer working compare
 
 ---
 
-## 🔑 How to Use Both Metrics
+## How to Use Both Metrics
 
 $C_v$ and PAR are complementary:
 
@@ -362,24 +366,44 @@ kafkatop --kafka-broker 1.2.3.4 --group-filter-pattern 'GroupName1' --summary-js
 Results in:
 
 ```json
-{
-  "ConsumerGroupName1": {
+  "consumer-group-123": {
+    "state": "STABLE",
     "topics": {
-      "TopicName": {
-        "partitions": 1672,
-        "lag_max": 86169242,
-        "lag_min": 0,
-        "par": 2.45,
-        "cv": 0.78,
+      "topic-123": {
         "configs": {
-          "retention.ms": "604800000",
+          "cleanup.policy": "delete",
+          "compression.type": "producer",
+          "delete.retention.ms": "86400000",
+          "file.delete.delay.ms": "60000",
+          "flush.messages": "9223372036854775807",
+          "flush.ms": "9223372036854775807",
+          "index.interval.bytes": "4096",
+          "max.compaction.lag.ms": "9223372036854775807",
+          "max.message.bytes": "1048588",
+          "message.downconversion.enable": "true",
+          "message.format.version": "3.0-IV1",
+          "message.timestamp.difference.max.ms": "9223372036854775807",
+          "message.timestamp.type": "CreateTime",
+          "min.cleanable.dirty.ratio": "0.5",
+          "min.compaction.lag.ms": "0",
+          "min.insync.replicas": "1",
+          "preallocate": "false",
+          "retention.bytes": "-1",
+          "retention.ms": "1209600000",
           "segment.bytes": "1073741824",
-          ...
-        }
+          "segment.index.bytes": "10485760",
+          "segment.jitter.ms": "0",
+          "segment.ms": "172800000",
+          "unclean.leader.election.enable": "false"
+        },
+        "cv": 0,
+        "lag_max": 0,
+        "lag_min": 0,
+        "par": 0,
+        "partitions": 1
       }
     }
-  }
-}
+  },
 ```
 
 The JSON output includes:
