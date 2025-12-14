@@ -108,11 +108,8 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 				semaphore <- struct{}{} // Acquire semaphore
 				defer func() { <-semaphore }() // Release semaphore
 
-				// Get a client from the pool
-				client := admin.GetClientFromPool()
-				defer admin.ReturnClientToPool(client)
-
-				offsets, err := admin.ListConsumerGroupOffsetsWithClient(ctx, gid, client)
+				// Use shared client (thread-safe)
+				offsets, err := admin.ListConsumerGroupOffsetsWithClient(ctx, gid, nil)
 				if err != nil {
 					// Skip groups with errors
 					return
@@ -191,11 +188,8 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 				semaphore <- struct{}{} // Acquire semaphore
 				defer func() { <-semaphore }() // Release semaphore
 
-				// Get a client from the pool
-				client := admin.GetClientFromPool()
-				defer admin.ReturnClientToPool(client)
-
-				offsets, err := admin.ListTopicOffsetsWithClient(ctx, t, ti.Partitions, client)
+				// Use shared client (thread-safe)
+				offsets, err := admin.ListTopicOffsetsWithClient(ctx, t, ti.Partitions, nil)
 				if err != nil {
 					// Skip topics with errors
 					return

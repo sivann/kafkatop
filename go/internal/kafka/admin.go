@@ -33,25 +33,18 @@ func NewAdminClient(broker string) (*AdminClient, error) {
 		return nil, fmt.Errorf("failed to connect to broker %s: %w", broker, err)
 	}
 
-	// Create a pool of clients for parallel operations
-	// Pool size matches typical maxConcurrent values (default 10, but allow up to 50)
-	poolSize := 50
-	clientPool := make(chan *kafka.Client, poolSize)
-	for i := 0; i < poolSize; i++ {
-		clientPool <- &kafka.Client{
-			Addr:    kafka.TCP(broker),
-			Timeout: 10 * time.Second,
-		}
+	// Create a single shared client for all operations
+	// kafka.Client is thread-safe and can handle concurrent requests efficiently
+	sharedClient := &kafka.Client{
+		Addr:    kafka.TCP(broker),
+		Timeout: 10 * time.Second,
 	}
 
 	return &AdminClient{
 		broker: broker,
 		conn:   conn,
-		client: &kafka.Client{
-			Addr:    kafka.TCP(broker),
-			Timeout: 10 * time.Second,
-		},
-		clientPool: clientPool,
+		client: sharedClient,
+		clientPool: nil, // No longer using a pool
 	}, nil
 }
 
@@ -268,11 +261,8 @@ func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []str
 				semaphore <- struct{}{} // Acquire semaphore
 				defer func() { <-semaphore }() // Release semaphore
 
-				// Get a client from the pool for this goroutine
-				client := <-a.clientPool
-				defer func() { a.clientPool <- client }() // Return client to pool
-
-				resp, err := client.DescribeGroups(ctx, &kafka.DescribeGroupsRequest{
+				// Use shared client (thread-safe)
+				resp, err := a.client.DescribeGroups(ctx, &kafka.DescribeGroupsRequest{
 					GroupIDs: []string{gid},
 				})
 

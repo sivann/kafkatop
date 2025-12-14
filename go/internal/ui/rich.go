@@ -214,6 +214,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dataMsg:
 		m.loading = false
 		m.loadingStatus = ""
+		// Update lastUpdateTime when data arrives to reset countdown for next cycle
+		// The countdown will count down from pollPeriod to 0, then tick fires
 		m.lastUpdateTime = time.Now()
 		if msg.err != nil {
 			m.err = msg.err
@@ -425,7 +427,8 @@ func (m *model) viewHelp() string {
 	b.WriteString("\n")
 
 	b.WriteString("Other:\n")
-	b.WriteString("  U             Toggle full numbers\n")
+	b.WriteString("  E             Toggle human-readable/plain numbers\n")
+	b.WriteString("  U             Toggle full numbers (alias for E)\n")
 	b.WriteString("  Ctrl+F        Toggle follow mode\n")
 	b.WriteString("\n")
 
@@ -761,7 +764,7 @@ func (m *model) viewDetail() string {
 		rateColor := getRankColor(partitionRate, minRate, maxRate)
 		
 		lagStr := formatNumber(m.showFullNumbers, lag)
-		rateStr := formatRate(partitionRate)
+		rateStr := formatRate(m.showFullNumbers, partitionRate)
 		
 		b.WriteString(fmt.Sprintf("%9d | %-24s | %12s | %12s | %s%-9s%s | %s%s%s\n",
 			part,
@@ -828,13 +831,18 @@ func (m *model) viewMain() string {
 		var refreshCountdown string
 		if m.paused {
 			refreshCountdown = "paused"
+		} else if m.loading {
+			// When loading, countdown should be 0s since refresh has started
+			refreshCountdown = "0s"
 		} else {
 			elapsed := time.Since(m.lastUpdateTime)
 			remaining := m.pollPeriod - elapsed
 			if remaining < 0 {
 				remaining = 0
 			}
-			refreshCountdown = fmt.Sprintf("%.0fs", remaining.Seconds())
+			// Use standard rounding: round to nearest second for accurate countdown
+			remainingSec := int(remaining.Seconds() + 0.5)
+			refreshCountdown = fmt.Sprintf("%ds", remainingSec)
 		}
 		
 		// Row 1: Status and actions
@@ -851,6 +859,7 @@ func (m *model) viewMain() string {
 		header1 += colorBrightWhite + formatLegendHotkey("[?]Help", "?", "")
 		header1 += colorBrightWhite + " | " + colorBrightGreen + "P" + colorBrightWhite + " pause"
 		header1 += colorBrightWhite + " | " + colorBrightGreen + "+/-" + colorBrightWhite + " rate"
+		header1 += colorBrightWhite + " | " + colorBrightGreen + "E" + colorBrightWhite + " scale"
 		
 		if m.filterPattern != "" {
 			header1 += colorBrightWhite + fmt.Sprintf(" | Group: %s", m.filterPattern)
@@ -1108,8 +1117,13 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "e":
+		// Toggle between human-readable and plain numbers (like top command)
+		m.showFullNumbers = !m.showFullNumbers
+		return m, nil
+
 	case "u":
-		// Toggle full numbers
+		// Toggle full numbers (alias for 'e')
 		m.showFullNumbers = !m.showFullNumbers
 		return m, nil
 
@@ -2119,7 +2133,7 @@ func formatNumber(showFull bool, n int64) string {
 	return fmt.Sprintf("%.2f%s", val, units[exp])
 }
 
-func formatRate(rate float64) string {
+func formatRate(showFull bool, rate float64) string {
 	if rate < 0 {
 		return "-"
 	}
@@ -2127,6 +2141,15 @@ func formatRate(rate float64) string {
 		return "0"
 	}
 	
+	if showFull {
+		// Plain number format - no units
+		if rate == float64(int64(rate)) {
+			return fmt.Sprintf("%.0f", rate)
+		}
+		return fmt.Sprintf("%.1f", rate)
+	}
+	
+	// Human-readable format with units
 	// Format as integer if whole number, otherwise with 1 decimal place
 	if rate < 1000 {
 		if rate == float64(int64(rate)) {
