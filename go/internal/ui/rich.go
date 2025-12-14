@@ -449,7 +449,7 @@ func (m *model) viewHelp() string {
 		{
 			header: "Navigation:",
 			items: []struct{ key, desc string }{
-				{"↑/↓, J/K", "Scroll up/down"},
+				{"↑/↓, J/K", " Scroll up/down"},
 				{"Space/B", "Page down/up"},
 				{"Home/End", "Jump to top/bottom"},
 			},
@@ -564,8 +564,13 @@ func (m *model) viewHelp() string {
 		if keyPadding < 0 {
 			keyPadding = 0
 		}
+		// Special case: add 4 extra spaces for "↑/↓, J/K" to align with other navigation keys
+		extraPadding := 0
+		if key == "↑/↓, J/K" {
+			extraPadding = 4
+		}
 		formattedKey := highlightKeysInText(key)
-		return strings.Repeat(" ", keyPadding) + formattedKey + ":"
+		return strings.Repeat(" ", keyPadding+extraPadding) + formattedKey + ": "
 	}
 
 	// Build rows by interleaving left and right sections
@@ -602,7 +607,7 @@ func (m *model) viewHelp() string {
 				keyPadding = 0
 			}
 			rightRows = append(rightRows, helpRowData{
-				rightKey:  strings.Repeat(" ", keyPadding) + keyStr + ":",
+				rightKey:  strings.Repeat(" ", keyPadding) + keyStr + ": ",
 				rightDesc: item.desc,
 			})
 		}
