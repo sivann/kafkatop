@@ -129,6 +129,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 	kd.GroupOffsetsTS = time.Now()
 
 	// Build topics with groups map
+	// Union partitions from all groups that consume each topic
 	t3 := time.Now()
 	for groupID, offsets := range kd.GroupOffsets {
 		if len(offsets.TopicOffsets) == 0 {
@@ -137,6 +138,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 
 		for topic, partOffsets := range offsets.TopicOffsets {
 			if _, exists := kd.TopicsWithGroups[topic]; !exists {
+				// First time seeing this topic - initialize with partitions from this group
 				partitions := make([]int32, 0, len(partOffsets))
 				for part := range partOffsets {
 					partitions = append(partitions, part)
@@ -145,6 +147,18 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 					Topic:      topic,
 					Groups:     []string{},
 					Partitions: partitions,
+				}
+			} else {
+				// Topic already exists - union partitions from this group
+				existingParts := make(map[int32]bool)
+				for _, part := range kd.TopicsWithGroups[topic].Partitions {
+					existingParts[part] = true
+				}
+				// Add any new partitions from this group
+				for part := range partOffsets {
+					if !existingParts[part] {
+						kd.TopicsWithGroups[topic].Partitions = append(kd.TopicsWithGroups[topic].Partitions, part)
+					}
 				}
 			}
 			kd.TopicsWithGroups[topic].Groups = append(kd.TopicsWithGroups[topic].Groups, groupID)
@@ -305,7 +319,18 @@ func CalcRate(kd1, kd2 *types.KafkaData, params *types.Params) map[string]map[st
 
 			eventsConsumptionRate := float64(eventsConsumed) / timeDelta
 
+			// Calculate per-partition consumption rates
+			partitionRates := make(map[int32]float64)
+			for part, offset1 := range part1Offsets {
+				if offset2, exists := part2Offsets[part]; exists {
+					partitionConsumed := offset2 - offset1
+					partitionRates[part] = float64(partitionConsumed) / timeDelta
+				}
+			}
+
 			// Calculate events arrival rate
+			// Match Python behavior exactly: sum(kd2['topic_offsets'][t].values()) - sum(kd1['topic_offsets'][t].values())
+			// Python sums ALL partitions present in each dict, regardless of whether they match between snapshots
 			topic1Offsets, exists1 := kd1.TopicOffsets[topic]
 			topic2Offsets, exists2 := kd2.TopicOffsets[topic]
 
@@ -313,6 +338,7 @@ func CalcRate(kd1, kd2 *types.KafkaData, params *types.Params) map[string]map[st
 			if exists1 && exists2 {
 				topic1Sum := int64(0)
 				topic2Sum := int64(0)
+				// Sum all partitions in each snapshot (matching Python behavior)
 				for _, offset := range topic1Offsets.PartitionOffsets {
 					topic1Sum += offset
 				}
@@ -370,6 +396,7 @@ func CalcRate(kd1, kd2 *types.KafkaData, params *types.Params) map[string]map[st
 				EventsArrivalRate:     eventsArrivalRate,
 				RemainingSec:          remainingSec,
 				RemainingHMS:          remainingHMS,
+				PartitionRates:        partitionRates,
 			}
 		}
 	}

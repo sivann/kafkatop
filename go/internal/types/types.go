@@ -67,6 +67,7 @@ type RateStats struct {
 	EventsArrivalRate     float64
 	RemainingSec          int64
 	RemainingHMS          string
+	PartitionRates        map[int32]float64 // partition -> consumption rate (evts/sec)
 }
 
 // KafkaData holds all Kafka-related data

@@ -492,8 +492,8 @@ func (m *model) viewDetail() string {
 			// Tiebreaker: sort by partition number
 			return partitions[i] < partitions[j]
 		})
-	case "offset":
-		// Sort by offset (descending - highest offset first)
+	case "groupoffset":
+		// Sort by group offset (descending - highest offset first)
 		sort.Slice(partitions, func(i, j int) bool {
 			offsetI := int64(0)
 			offsetJ := int64(0)
@@ -509,6 +509,48 @@ func (m *model) viewDetail() string {
 			}
 			if offsetI != offsetJ {
 				return offsetI > offsetJ // Higher offset first
+			}
+			// Tiebreaker: sort by partition number
+			return partitions[i] < partitions[j]
+		})
+	case "topicoffset":
+		// Sort by topic offset (descending - highest offset first)
+		sort.Slice(partitions, func(i, j int) bool {
+			offsetI := int64(0)
+			offsetJ := int64(0)
+			if topicOffsets != nil {
+				if o, exists := topicOffsets[partitions[i]]; exists {
+					offsetI = o
+				}
+			}
+			if topicOffsets != nil {
+				if o, exists := topicOffsets[partitions[j]]; exists {
+					offsetJ = o
+				}
+			}
+			if offsetI != offsetJ {
+				return offsetI > offsetJ // Higher offset first
+			}
+			// Tiebreaker: sort by partition number
+			return partitions[i] < partitions[j]
+		})
+	case "rate":
+		// Sort by rate (descending - highest rate first)
+		sort.Slice(partitions, func(i, j int) bool {
+			rateI := 0.0
+			rateJ := 0.0
+			if rateStats.PartitionRates != nil {
+				if r, exists := rateStats.PartitionRates[partitions[i]]; exists {
+					rateI = r
+				}
+			}
+			if rateStats.PartitionRates != nil {
+				if r, exists := rateStats.PartitionRates[partitions[j]]; exists {
+					rateJ = r
+				}
+			}
+			if rateI != rateJ {
+				return rateI > rateJ // Higher rate first
 			}
 			// Tiebreaker: sort by partition number
 			return partitions[i] < partitions[j]
@@ -566,8 +608,120 @@ func (m *model) viewDetail() string {
 	b.WriteString(fmt.Sprintf("ETA: %s\n", rateStats.RemainingHMS))
 	b.WriteString("\n")
 
-	b.WriteString("Partition | Topic                    | Group Offset | Topic Offset | Lag\n")
-	b.WriteString("----------|--------------------------|--------------|--------------|----\n")
+	// Build header with highlighted hotkeys
+	// Helper function to highlight hotkey in header column
+	formatDetailHeaderHotkey := func(text string, hotkey string, sortKey string, width int, rightAlign bool) string {
+		hotkeyLower := strings.ToLower(hotkey)
+		textLower := strings.ToLower(text)
+		hotkeyIdx := strings.Index(textLower, hotkeyLower)
+		
+		var coloredText string
+		if hotkeyIdx == -1 {
+			coloredText = colorBrightWhite + text + colorReset
+		} else {
+			before := text[:hotkeyIdx]
+			hotkeyChar := text[hotkeyIdx : hotkeyIdx+1]
+			after := text[hotkeyIdx+1:]
+			
+			if m.detailPartitionSortKey == sortKey {
+				// Reverse video for sorted key
+				coloredText = colorBrightWhite + before + colorReverse + colorBrightGreen + hotkeyChar + colorReset + colorBrightWhite + after + colorReset
+			} else {
+				// Normal green highlighting
+				coloredText = colorBrightWhite + before + colorBrightGreen + hotkeyChar + colorBrightWhite + after + colorReset
+			}
+		}
+		
+		// Format with proper width (accounting for ANSI codes in width calculation)
+		// First format plain text to get correct width, then replace with colored version
+		var plainFormatted string
+		if rightAlign {
+			plainFormatted = fmt.Sprintf("%*s", width, text)
+		} else {
+			plainFormatted = fmt.Sprintf("%-*s", width, text)
+		}
+		
+		// Replace the plain text with colored version
+		return strings.Replace(plainFormatted, text, coloredText, 1)
+	}
+	
+	// Build header with highlighted hotkeys (preserving column widths)
+	partitionHeader := fmt.Sprintf("%-9s", "Partition")
+	topicHeader := fmt.Sprintf("%-24s", "Topic")
+	groupOffsetHeader := formatDetailHeaderHotkey("Group Offset", "G", "groupoffset", 13, false)
+	topicOffsetHeader := formatDetailHeaderHotkey("Topic Offset", "T", "topicoffset", 13, false)
+	lagHeader := formatDetailHeaderHotkey("Lag", "L", "lag", 9, false)
+	rateHeader := formatDetailHeaderHotkey("Rate (evts/sec)", "R", "rate", 16, false)
+	
+	headerLine := fmt.Sprintf("%s | %s | %s | %s | %s | %s",
+		partitionHeader,
+		topicHeader,
+		groupOffsetHeader,
+		topicOffsetHeader,
+		lagHeader,
+		rateHeader)
+	
+	b.WriteString(headerLine + "\n")
+	b.WriteString("----------|--------------------------|--------------|--------------|----------|----------------\n")
+
+	// Calculate min/max for lag and rate to determine color gradients
+	var minLag, maxLag int64 = 0, 0
+	var minRate, maxRate float64 = 0, 0
+	firstLag := true
+	firstRate := true
+	
+	for _, part := range partitions {
+		lag := lagStats.PartitionLags[part]
+		if firstLag {
+			minLag, maxLag = lag, lag
+			firstLag = false
+		} else {
+			if lag < minLag {
+				minLag = lag
+			}
+			if lag > maxLag {
+				maxLag = lag
+			}
+		}
+		
+		rate := 0.0
+		if rateStats.PartitionRates != nil {
+			if r, exists := rateStats.PartitionRates[part]; exists {
+				rate = r
+			}
+		}
+		if firstRate {
+			minRate, maxRate = rate, rate
+			firstRate = false
+		} else {
+			if rate < minRate {
+				minRate = rate
+			}
+			if rate > maxRate {
+				maxRate = rate
+			}
+		}
+	}
+	
+	// Helper function to get color based on value position in range (green -> yellow -> red)
+	getRankColor := func(value, minVal, maxVal float64) string {
+		if maxVal == minVal {
+			return colorReset // All same value, no color
+		}
+		// Normalize to 0-1 range
+		ratio := (value - minVal) / (maxVal - minVal)
+		// Map to color: 0.0 = green, 0.5 = yellow, 1.0 = red
+		if ratio < 0.33 {
+			// Green for low values (bottom third)
+			return colorGreen
+		} else if ratio < 0.67 {
+			// Yellow for middle values (middle third)
+			return colorYellow
+		} else {
+			// Red for high values (top third)
+			return colorRed
+		}
+	}
 
 	// Render visible partition rows
 	for i := startIdx; i < endIdx; i++ {
@@ -594,27 +748,51 @@ func (m *model) viewDetail() string {
 			displayTopic = displayTopic[:21] + "..."
 		}
 		
-		b.WriteString(fmt.Sprintf("%9d | %-24s | %12s | %12s | %s\n",
+		// Get per-partition consumption rate
+		partitionRate := 0.0
+		if rateStats.PartitionRates != nil {
+			if rate, exists := rateStats.PartitionRates[part]; exists {
+				partitionRate = rate
+			}
+		}
+		
+		// Get colors based on ranking
+		lagColor := getRankColor(float64(lag), float64(minLag), float64(maxLag))
+		rateColor := getRankColor(partitionRate, minRate, maxRate)
+		
+		lagStr := formatNumber(m.showFullNumbers, lag)
+		rateStr := formatRate(partitionRate)
+		
+		b.WriteString(fmt.Sprintf("%9d | %-24s | %12s | %12s | %s%-9s%s | %s%s%s\n",
 			part,
 			displayTopic,
 			formatNumber(m.showFullNumbers, groupOffset),
 			formatNumber(m.showFullNumbers, topicOffset),
-			formatNumber(m.showFullNumbers, lag)))
+			lagColor, lagStr, colorReset,
+			rateColor, rateStr, colorReset))
 	}
 
 	// Render footer (always visible)
 	sortHint := ""
 	if m.detailPartitionSortKey == "lag" {
 		sortHint = " | [L]ag sorted"
-	} else if m.detailPartitionSortKey == "offset" {
-		sortHint = " | [S]orted by offset"
+	} else if m.detailPartitionSortKey == "groupoffset" {
+		sortHint = " | [G]roup offset sorted"
+	} else if m.detailPartitionSortKey == "topicoffset" {
+		sortHint = " | [T]opic offset sorted"
+	} else if m.detailPartitionSortKey == "rate" {
+		sortHint = " | [R]ate sorted"
 	} else {
-		sortHint = " | [L]ag/[S]ort by offset"
+		sortHint = " | [L]ag/[G]roup/[T]opic/[R]ate sort"
 	}
+	
+	// Add color legend
+	colorLegend := fmt.Sprintf(" | %s[green=low%s, %sred=high%s]", colorGreen, colorReset, colorRed, colorReset)
+	
 	if len(partitions) > maxPartitionRows {
-		b.WriteString(fmt.Sprintf("\nRows %d-%d of %d partitions | Use ↑↓/JK/Space/B to scroll, Home/End to jump%s\n", startIdx+1, endIdx, len(partitions), sortHint))
+		b.WriteString(fmt.Sprintf("\nRows %d-%d of %d partitions | Use ↑↓/JK/Space/B to scroll, Home/End to jump%s%s\n", startIdx+1, endIdx, len(partitions), sortHint, colorLegend))
 	} else {
-		b.WriteString(fmt.Sprintf("\n%d partitions total%s\n", len(partitions), sortHint))
+		b.WriteString(fmt.Sprintf("\n%d partitions total%s%s\n", len(partitions), sortHint, colorLegend))
 	}
 
 	b.WriteString("\nPress Esc to return\n")
@@ -671,6 +849,8 @@ func (m *model) viewMain() string {
 		header1 += colorBrightWhite + formatLegendHotkey("[X]topic filter", "X", "") + ", "
 		header1 += colorBrightWhite + colorBrightGreen + "[Enter]" + colorBrightWhite + "Details, "
 		header1 += colorBrightWhite + formatLegendHotkey("[?]Help", "?", "")
+		header1 += colorBrightWhite + " | " + colorBrightGreen + "P" + colorBrightWhite + " pause"
+		header1 += colorBrightWhite + " | " + colorBrightGreen + "+/-" + colorBrightWhite + " rate"
 		
 		if m.filterPattern != "" {
 			header1 += colorBrightWhite + fmt.Sprintf(" | Group: %s", m.filterPattern)
@@ -689,8 +869,6 @@ func (m *model) viewMain() string {
 		header2 += colorBrightWhite + formatLegendHotkey("[N]ew topic", "N", "newrate") + "  "
 		header2 += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate")
 		header2 += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑↓" + colorBrightWhite + "/" + colorBrightGreen + "JK" + colorBrightWhite + "/" + colorBrightGreen + "Space" + colorBrightWhite + "/" + colorBrightGreen + "B" + colorBrightWhite + "/PgUp/PgDn"
-		header2 += colorBrightWhite + " | " + colorBrightGreen + "P" + colorBrightWhite + " pause"
-		header2 += colorBrightWhite + " | " + colorBrightGreen + "+/-" + colorBrightWhite + " rate"
 
 		if m.sortKey != "" {
 			direction := "↑"
@@ -1192,12 +1370,30 @@ func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.detailScrollOffset = 0 // Reset scroll when sorting changes
 		return m, nil
-	case "s", "S":
-		// Sort by offset
-		if m.detailPartitionSortKey == "offset" {
+	case "g", "G":
+		// Sort by group offset
+		if m.detailPartitionSortKey == "groupoffset" {
 			m.detailPartitionSortKey = "" // Toggle off
 		} else {
-			m.detailPartitionSortKey = "offset"
+			m.detailPartitionSortKey = "groupoffset"
+		}
+		m.detailScrollOffset = 0 // Reset scroll when sorting changes
+		return m, nil
+	case "t", "T":
+		// Sort by topic offset
+		if m.detailPartitionSortKey == "topicoffset" {
+			m.detailPartitionSortKey = "" // Toggle off
+		} else {
+			m.detailPartitionSortKey = "topicoffset"
+		}
+		m.detailScrollOffset = 0 // Reset scroll when sorting changes
+		return m, nil
+	case "r", "R":
+		// Sort by rate
+		if m.detailPartitionSortKey == "rate" {
+			m.detailPartitionSortKey = "" // Toggle off
+		} else {
+			m.detailPartitionSortKey = "rate"
 		}
 		m.detailScrollOffset = 0 // Reset scroll when sorting changes
 		return m, nil
@@ -1909,6 +2105,39 @@ func formatNumber(showFull bool, n int64) string {
 	units := []string{"", "K", "M", "G", "T", "P"}
 	exp := 0
 	val := float64(n)
+
+	for val >= 1000 && exp < len(units)-1 {
+		val /= 1000
+		exp++
+	}
+
+	if val >= 100 {
+		return fmt.Sprintf("%.0f%s", val, units[exp])
+	} else if val >= 10 {
+		return fmt.Sprintf("%.1f%s", val, units[exp])
+	}
+	return fmt.Sprintf("%.2f%s", val, units[exp])
+}
+
+func formatRate(rate float64) string {
+	if rate < 0 {
+		return "-"
+	}
+	if rate == 0 {
+		return "0"
+	}
+	
+	// Format as integer if whole number, otherwise with 1 decimal place
+	if rate < 1000 {
+		if rate == float64(int64(rate)) {
+			return fmt.Sprintf("%.0f", rate)
+		}
+		return fmt.Sprintf("%.1f", rate)
+	}
+
+	units := []string{"", "K", "M", "G", "T", "P"}
+	exp := 0
+	val := rate
 
 	for val >= 1000 && exp < len(units)-1 {
 		val /= 1000
