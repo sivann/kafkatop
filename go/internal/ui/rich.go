@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -408,7 +409,7 @@ func (m *model) viewHelp() string {
 	b.WriteString("  X             Filter topics\n")
 	b.WriteString("  /             Search\n")
 	b.WriteString("  ? or H        Show this help\n")
-	b.WriteString("  Enter         View partition details\n")
+	b.WriteString("  Enter or D    View partition details\n")
 	b.WriteString("  Esc           Close dialogs/details\n")
 	b.WriteString("\n")
 
@@ -425,6 +426,28 @@ func (m *model) viewHelp() string {
 	b.WriteString("Partition Details:\n")
 	b.WriteString("  S             Sort partitions by lag+offset\n")
 	b.WriteString("  Space/B       Page down/up\n")
+	b.WriteString("\n")
+
+	b.WriteString("Column Descriptions:\n")
+	b.WriteString("  Group         Consumer group name\n")
+	b.WriteString("  Topic         Kafka topic name\n")
+	b.WriteString("  Partitions    Number of partitions\n")
+	b.WriteString("  Since         Time since last update (seconds)\n")
+	b.WriteString("  Events        Total events consumed\n")
+	b.WriteString("  New topic     Arrival rate (events/sec)\n")
+	b.WriteString("  Consumed      Consumption rate (events/sec)\n")
+	b.WriteString("  Time Left     Estimated time to consume all lag\n")
+	b.WriteString("  Lag           Total lag across all partitions\n")
+	b.WriteString("\n")
+
+	b.WriteString("Partition Health:\n")
+	b.WriteString("  PAR           Peak-to-Average ratio: worst-case burden\n")
+	b.WriteString("                on the single most overloaded consumer\n")
+	b.WriteString("  Cv            Coefficient of Variation (StdDev/mean).\n")
+	b.WriteString("                How uniformly load is distributed:\n")
+	b.WriteString("                0 = perfect, 0.5-1 = high skew,\n")
+	b.WriteString("                >1 = critical skew (standard deviation > mean):\n")
+	b.WriteString("                action required (e.g., key salting, change partitioner)\n")
 	b.WriteString("\n")
 
 	b.WriteString("Other:\n")
@@ -565,10 +588,10 @@ func (m *model) viewDetail() string {
 	}
 
 	// Calculate space allocation - count actual newlines:
-	// Header: title (1) + "\n\n" (2) + ReplicationFactor/Configs (1) + Total Lag (1) + Min (1) + Consumption Rate (1) + Arrival Rate (1) + ETA (1) + "\n" (1) + table header (1) + separator (1) = 12 lines
+	// Header: title (1) + "\n\n" (2) + ReplicationFactor/Configs (1) + Total Lag (1) + Min (1) + PAR (1) + Cv (1) + Consumption Rate (1) + Arrival Rate (1) + ETA (1) + "\n" (1) + table header (1) + separator (1) = 14 lines
 	// Footer: "\n" (1) + scroll info (1) + "\n" (1) + "Press Esc" (1) = 4 lines  
-	// Total reserved: 16 lines
-	headerLines := 12
+	// Total reserved: 18 lines
+	headerLines := 14
 	footerLines := 4
 	maxPartitionRows := m.height - headerLines - footerLines
 	if maxPartitionRows < 1 {
@@ -610,35 +633,112 @@ func (m *model) viewDetail() string {
 	b.WriteString(headerStyle.Render(fmt.Sprintf("Partition Details: %s / %s", m.detailGroup, m.detailTopic)))
 	b.WriteString("\n\n")
 
-	// Display topic-level metadata
-	if m.detailTopicMetadata != nil {
-		metadataParts := []string{}
-		if m.detailTopicMetadata.TopicID != "" {
-			metadataParts = append(metadataParts, fmt.Sprintf("TopicID: %s", m.detailTopicMetadata.TopicID))
-		}
-		metadataParts = append(metadataParts, fmt.Sprintf("ReplicationFactor: %d", m.detailTopicMetadata.ReplicationFactor))
-		if len(m.detailTopicMetadata.Configs) > 0 {
-			configPairs := make([]string, 0, len(m.detailTopicMetadata.Configs))
-			for k, v := range m.detailTopicMetadata.Configs {
-				configPairs = append(configPairs, fmt.Sprintf("%s=%s", k, v))
+	// Display topic-level metadata and configs in a two-column layout
+	// Left column: metadata, Right column: configs table
+	leftColWidth := 50 // Width for left column (metadata)
+	rightColWidth := m.width - leftColWidth - 5 // Width for right column (configs), with spacing
+	
+	if rightColWidth < 30 {
+		rightColWidth = 30 // Minimum width for configs
+		leftColWidth = m.width - rightColWidth - 5
+	}
+	
+	// Helper function to format config value with .ms conversion to days
+	formatConfigValue := func(key, value string) string {
+		// Check if it's a .ms config and convert to days
+		if strings.HasSuffix(key, ".ms") {
+			if ms, err := strconv.ParseInt(value, 10, 64); err == nil {
+				days := float64(ms) / (1000 * 60 * 60 * 24)
+				if days >= 1 {
+					return fmt.Sprintf("%s (%d days)", value, int(days))
+				} else {
+					hours := float64(ms) / (1000 * 60 * 60)
+					if hours >= 1 {
+						return fmt.Sprintf("%s (%.1f hours)", value, hours)
+					} else {
+						minutes := float64(ms) / (1000 * 60)
+						return fmt.Sprintf("%s (%.1f min)", value, minutes)
+					}
+				}
 			}
-			sort.Strings(configPairs) // Sort for consistent display
-			metadataParts = append(metadataParts, fmt.Sprintf("Configs: %s", strings.Join(configPairs, ",")))
 		}
-		if len(metadataParts) > 0 {
-			b.WriteString(strings.Join(metadataParts, "  ") + "\n")
+		return value
+	}
+	
+	// Build configs table rows
+	var configRows []string
+	if m.detailTopicMetadata != nil && len(m.detailTopicMetadata.Configs) > 0 {
+		// Sort config keys for consistent display
+		configKeys := make([]string, 0, len(m.detailTopicMetadata.Configs))
+		for k := range m.detailTopicMetadata.Configs {
+			configKeys = append(configKeys, k)
+		}
+		sort.Strings(configKeys)
+		
+		for _, key := range configKeys {
+			value := formatConfigValue(key, m.detailTopicMetadata.Configs[key])
+			configRows = append(configRows, fmt.Sprintf("%-25s: %s", key, value))
 		}
 	}
-
-	b.WriteString(fmt.Sprintf("Total Lag: %s\n", formatNumber(m.showFullNumbers, lagStats.Sum)))
-	b.WriteString(fmt.Sprintf("Min: %s, Max: %s, Mean: %.1f, Median: %s\n",
-		formatNumber(m.showFullNumbers, lagStats.Min),
-		formatNumber(m.showFullNumbers, lagStats.Max),
-		lagStats.Mean,
-		formatNumber(m.showFullNumbers, lagStats.Median)))
-	b.WriteString(fmt.Sprintf("Consumption Rate: %s evts/sec\n", formatNumber(m.showFullNumbers, int64(rateStats.EventsConsumptionRate))))
-	b.WriteString(fmt.Sprintf("Arrival Rate: %s evts/sec\n", formatNumber(m.showFullNumbers, int64(rateStats.EventsArrivalRate))))
-	b.WriteString(fmt.Sprintf("ETA: %s\n", rateStats.RemainingHMS))
+	
+	// Display metadata and configs side by side
+	parStr := "-"
+	if lagStats.PAR > 0 {
+		parStr = fmt.Sprintf("%.2f", lagStats.PAR)
+	}
+	cvStr := "-"
+	if lagStats.Cv > 0 {
+		cvStr = fmt.Sprintf("%.2f", lagStats.Cv)
+	}
+	metadataLines := []string{
+		fmt.Sprintf("Total Lag: %s", formatNumber(m.showFullNumbers, lagStats.Sum)),
+		fmt.Sprintf("Min: %s, Max: %s, Mean: %.1f, Median: %s",
+			formatNumber(m.showFullNumbers, lagStats.Min),
+			formatNumber(m.showFullNumbers, lagStats.Max),
+			lagStats.Mean,
+			formatNumber(m.showFullNumbers, lagStats.Median)),
+		fmt.Sprintf("PAR: %s", parStr),
+		fmt.Sprintf("Cv: %s", cvStr),
+		fmt.Sprintf("Consumption Rate: %s evts/sec", formatNumber(m.showFullNumbers, int64(rateStats.EventsConsumptionRate))),
+		fmt.Sprintf("Arrival Rate: %s evts/sec", formatNumber(m.showFullNumbers, int64(rateStats.EventsArrivalRate))),
+		fmt.Sprintf("ETA: %s", rateStats.RemainingHMS),
+	}
+	
+	// Add topic metadata header
+	if m.detailTopicMetadata != nil {
+		headerParts := []string{}
+		if m.detailTopicMetadata.TopicID != "" {
+			headerParts = append(headerParts, fmt.Sprintf("TopicID: %s", m.detailTopicMetadata.TopicID))
+		}
+		headerParts = append(headerParts, fmt.Sprintf("ReplicationFactor: %d", m.detailTopicMetadata.ReplicationFactor))
+		if len(headerParts) > 0 {
+			b.WriteString(strings.Join(headerParts, "  ") + "\n")
+		}
+	}
+	
+	// Display metadata and configs side by side
+	// Limit config rows to match metadata rows (5 rows) to prevent pushing table off screen
+	maxConfigRows := len(metadataLines) // Show at most as many configs as metadata lines
+	if len(configRows) > maxConfigRows {
+		configRows = configRows[:maxConfigRows]
+	}
+	
+	for i := 0; i < len(metadataLines); i++ {
+		leftPart := metadataLines[i]
+		rightPart := ""
+		if i < len(configRows) {
+			rightPart = configRows[i]
+		}
+		
+		// Format left column
+		leftFormatted := fmt.Sprintf("%-*s", leftColWidth, leftPart)
+		if rightPart != "" {
+			b.WriteString(fmt.Sprintf("%s  %s\n", leftFormatted, rightPart))
+		} else {
+			b.WriteString(leftFormatted + "\n")
+		}
+	}
+	
 	b.WriteString("\n")
 
 	// Build header with highlighted hotkeys
@@ -718,9 +818,19 @@ func (m *model) viewDetail() string {
 		leaderHeader)
 	
 	b.WriteString(headerLine + "\n")
-	// Separator line must match exact column widths:
+	// Separator line must match exact column widths AND spacing format (generate programmatically to ensure alignment):
+	// Format matches headerLine: "%s | %s | %s | ..." which means spaces around pipes
 	// Partition: 9, Topic: 24, Group Offset: 12, Topic Offset: 12, Lag: 9, Rate: 16, Replica IDs: 20, ISR: 20, Leader: 8
-	b.WriteString("---------|------------------------|------------|------------|---------|----------------|--------------------|--------------------|--------\n")
+	separator := strings.Repeat("-", 9) + " | " +
+		strings.Repeat("-", 24) + " | " +
+		strings.Repeat("-", 12) + " | " +
+		strings.Repeat("-", 12) + " | " +
+		strings.Repeat("-", 9) + " | " +
+		strings.Repeat("-", 16) + " | " +
+		strings.Repeat("-", 20) + " | " +
+		strings.Repeat("-", 20) + " | " +
+		strings.Repeat("-", 8) + "\n"
+	b.WriteString(separator)
 
 	// Calculate min/max for lag and rate to determine color gradients
 	var minLag, maxLag int64 = 0, 0
@@ -952,7 +1062,7 @@ func (m *model) viewMain() string {
 		header1 += colorBrightWhite + formatLegendHotkey("[Q]uit", "Q", "") + ", "
 		header1 += colorBrightWhite + formatLegendHotkey("[F]ilter", "F", "") + ", "
 		header1 += colorBrightWhite + formatLegendHotkey("[X]topic filter", "X", "") + ", "
-		header1 += colorBrightWhite + colorBrightGreen + "[Enter]" + colorBrightWhite + "Details, "
+		header1 += colorBrightWhite + colorBrightGreen + "[Enter]" + colorBrightWhite + "/" + colorBrightGreen + "[D]" + colorBrightWhite + "Details, "
 		header1 += colorBrightWhite + formatLegendHotkey("[?]Help", "?", "")
 		header1 += colorBrightWhite + " | " + colorBrightGreen + "P" + colorBrightWhite + " pause"
 		header1 += colorBrightWhite + " | " + colorBrightGreen + "+/-" + colorBrightWhite + " rate"
@@ -973,7 +1083,9 @@ func (m *model) viewMain() string {
 		header2 += colorBrightWhite + formatLegendHotkey("[T]ime Left", "T", "eta") + "  "
 		header2 += colorBrightWhite + formatLegendHotkey("[L]ag", "L", "lag") + "  "
 		header2 += colorBrightWhite + formatLegendHotkey("[N]ew topic", "N", "newrate") + "  "
-		header2 += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate")
+		header2 += colorBrightWhite + formatLegendHotkey("[C]onsumed", "C", "rate") + "  "
+		header2 += colorBrightWhite + formatLegendHotkey("P[A]R", "A", "par") + "  "
+		header2 += colorBrightWhite + formatLegendHotkey("C[V]", "V", "cv")
 		header2 += colorBrightWhite + " | scroll: " + colorBrightGreen + "↑↓" + colorBrightWhite + "/" + colorBrightGreen + "JK" + colorBrightWhite + "/" + colorBrightGreen + "Space" + colorBrightWhite + "/" + colorBrightGreen + "B" + colorBrightWhite + "/PgUp/PgDn"
 
 		if m.sortKey != "" {
@@ -1121,8 +1233,8 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 		return m, nil
 
-	case "enter":
-		// Enter detail view
+	case "enter", "d":
+		// Enter detail view (Enter or D)
 		rows := m.buildRowData()
 		m.sortRowData(rows)
 		if m.selectedRowIdx >= 0 && m.selectedRowIdx < len(rows) {
@@ -1275,7 +1387,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.updateTable()
 		return m, nil
 
-	case "g", "G", "o", "O", "P", "t", "T", "l", "L", "c", "C":
+	case "g", "G", "o", "O", "P", "t", "T", "l", "L", "c", "C", "a", "A", "v", "V":
 		newSortKey := ""
 		switch msg.String() {
 		case "g", "G":
@@ -1293,6 +1405,10 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			newSortKey = "rate"
 		case "n", "N":
 			newSortKey = "newrate"
+		case "a", "A":
+			newSortKey = "par"
+		case "v", "V":
+			newSortKey = "cv"
 		}
 
 		if newSortKey != "" {
@@ -1300,7 +1416,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.sortReverse = !m.sortReverse
 			} else {
 				m.sortKey = newSortKey
-				m.sortReverse = (newSortKey == "eta" || newSortKey == "lag")
+				m.sortReverse = (newSortKey == "eta" || newSortKey == "lag" || newSortKey == "par" || newSortKey == "cv")
 			}
 
 			m.scrollOffset = 0 // Reset scroll when sorting
@@ -1597,6 +1713,8 @@ type rowData struct {
 	consRate         int64
 	eta              string
 	lag              int64
+	par              float64 // Peak-to-Average Ratio
+	cv               float64 // Coefficient of Variation
 	hasIssues        bool
 	etaColor         string
 	rateColor        string
@@ -1621,12 +1739,14 @@ func (m *model) renderTable() string {
 		consRateWidth  = 9
 		etaWidth       = 13
 		lagWidth       = 11
+		parWidth       = 7 // PAR column width
+		cvWidth        = 7 // Cv column width
 	)
 
 	// Calculate available width for group/topic columns
-	// Total fixed width: indicator + parts + since + consumed + newRate + consRate + eta + lag + spacing
-	// Spaces: indicator-group, group-topic, topic-parts, parts-since, since-consumed, consumed-newRate, newRate-consRate, consRate-eta, eta-lag = 9 spaces
-	fixedWidth := indicatorWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + 9 // spaces between columns
+	// Total fixed width: indicator + parts + since + consumed + newRate + consRate + eta + lag + par + cv + spacing
+	// Spaces: indicator-group, group-topic, topic-parts, parts-since, since-consumed, consumed-newRate, newRate-consRate, consRate-eta, eta-lag, lag-par, par-cv = 11 spaces
+	fixedWidth := indicatorWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + parWidth + cvWidth + 11 // spaces between columns
 	availableWidth := m.width - fixedWidth - 2 // margin
 	
 	// Adaptive group/topic widths with minimums
@@ -1750,7 +1870,7 @@ func (m *model) renderTable() string {
 		newRateTopCol = strings.Replace(newRateTopPlain, "New topic", brightWhite+green+"N"+brightWhite+"ew topic"+reset, 1)
 	}
 	
-	row1 := fmt.Sprintf("%-*s %-*s %-*s %*s %*s %*s %s %s %*s %*s",
+	row1 := fmt.Sprintf("%-*s %-*s %-*s %*s %*s %*s %s %s %*s %*s %*s %*s",
 		indicatorWidth, "",
 		groupWidth, "",
 		topicWidth, "",
@@ -1760,7 +1880,9 @@ func (m *model) renderTable() string {
 		newRateTopCol,
 		consumedRateTopCol,
 		etaWidth, "",
-		lagWidth, "")
+		lagWidth, "",
+		parWidth, "",
+		cvWidth, "")
 
 	// Row 2 - build each column separately
 	groupCol := formatHeaderCol("Group", "G", "group", groupWidth, true)
@@ -1785,9 +1907,11 @@ func (m *model) renderTable() string {
 	consumedRateCol := strings.Replace(consumedRatePlain, "evts/sec", brightWhite+"evts/sec"+reset, 1)
 	etaCol := formatHeaderCol("Time Left", "T", "eta", etaWidth, false)
 	lagCol := formatHeaderCol("Lag", "L", "lag", lagWidth, false)
+	parCol := formatHeaderCol("PAR", "A", "par", parWidth, false)
+	cvCol := formatHeaderCol("Cv", "V", "cv", cvWidth, false)
 
 	indicatorCol := fmt.Sprintf("%-*s", indicatorWidth, "")
-	row2 := indicatorCol + " " + groupCol + " " + topicCol + " " + partsCol + " " + sinceCol + " " + consumedTotalCol + " " + newRateCol + " " + consumedRateCol + " " + etaCol + " " + lagCol
+	row2 := indicatorCol + " " + groupCol + " " + topicCol + " " + partsCol + " " + sinceCol + " " + consumedTotalCol + " " + newRateCol + " " + consumedRateCol + " " + etaCol + " " + lagCol + " " + parCol + " " + cvCol
 
 	// Print header row 1 (bright white)
 	b.WriteString(brightWhite + row1 + reset + "\n")
@@ -1796,7 +1920,7 @@ func (m *model) renderTable() string {
 	b.WriteString(row2 + "\n")
 
 	// Header underline
-	totalWidth := indicatorWidth + groupWidth + topicWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + 9
+	totalWidth := indicatorWidth + groupWidth + topicWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + parWidth + cvWidth + 11
 	b.WriteString(strings.Repeat("─", totalWidth))
 	b.WriteString("\n")
 
@@ -1895,6 +2019,24 @@ func (m *model) renderTable() string {
 			lagStr = lagStr[:lagWidth]
 		}
 		
+		// Format PAR (Peak-to-Average Ratio)
+		parStr := "-"
+		if row.par > 0 {
+			parStr = fmt.Sprintf("%.2f", row.par)
+		}
+		if len(parStr) > parWidth {
+			parStr = parStr[:parWidth]
+		}
+		
+		// Format Cv (Coefficient of Variation)
+		cvStr := "-"
+		if row.cv > 0 {
+			cvStr = fmt.Sprintf("%.2f", row.cv)
+		}
+		if len(cvStr) > cvWidth {
+			cvStr = cvStr[:cvWidth]
+		}
+		
 		// Check if this row matches search (highlight if search pattern exists, even if dialog is closed)
 		isSearchMatch := false
 		if m.searchPattern != "" && len(m.searchMatches) > 0 {
@@ -1911,6 +2053,18 @@ func (m *model) renderTable() string {
 		// Get color codes
 		rateColorCode := getColorCode(row.rateColor)
 		etaColorCode := getColorCode(row.etaColor)
+		
+		// Get Cv color based on thresholds: green (closer to 0), yellow (0.5-1), red (>1)
+		cvColorCode := colorReset
+		if row.cv > 0 {
+			if row.cv < 0.5 {
+				cvColorCode = "\033[32m" // Green: good (closer to 0)
+			} else if row.cv <= 1.0 {
+				cvColorCode = "\033[33m" // Yellow: high skew (0.5-1)
+			} else {
+				cvColorCode = "\033[31m" // Red: critical skew (>1)
+			}
+		}
 
 		// Determine background color
 		// Priority: issues (red) > search match (green)
@@ -1977,9 +2131,19 @@ func (m *model) renderTable() string {
 		if len(lagStrPadded) < lagWidth {
 			lagStrPadded = strings.Repeat(" ", lagWidth-len(lagStrPadded)) + lagStrPadded
 		}
+		
+		parStrPadded := parStr
+		if len(parStrPadded) < parWidth {
+			parStrPadded = strings.Repeat(" ", parWidth-len(parStrPadded)) + parStrPadded
+		}
+		
+		cvStrPadded := cvStr
+		if len(cvStrPadded) < cvWidth {
+			cvStrPadded = strings.Repeat(" ", cvWidth-len(cvStrPadded)) + cvStrPadded
+		}
 
 		// Build row with background spanning entire width (no format specifiers, just concatenation)
-		rowText := indicatorStr + " " + groupPadded + " " + topicPadded + " " + partsStrPadded + " " + sinceStrPadded + " " + consumedStrPadded + " " + newRateStrPadded + " " + consRateStrPadded + " " + etaStrPadded + " " + lagStrPadded
+		rowText := indicatorStr + " " + groupPadded + " " + topicPadded + " " + partsStrPadded + " " + sinceStrPadded + " " + consumedStrPadded + " " + newRateStrPadded + " " + consRateStrPadded + " " + etaStrPadded + " " + lagStrPadded + " " + parStrPadded + " " + cvStrPadded
 
 		// Apply background and colors
 		if bgCode != "" {
@@ -2017,7 +2181,9 @@ func (m *model) renderTable() string {
 				newRateStrPadded + " " +
 				rateColorCode + consRateStrPadded + reset + " " +
 				etaColorCode + etaStrPadded + reset + " " +
-				lagStrPadded + "\n"
+				lagStrPadded + " " +
+				parStrPadded + " " +
+				cvColorCode + cvStrPadded + reset + "\n"
 			b.WriteString(rowLine)
 		}
 	}
@@ -2184,6 +2350,8 @@ func (m *model) buildRowData() []*rowData {
 				consRate:        int64(rate.EventsConsumptionRate),
 				eta:             rate.RemainingHMS,
 				lag:             lag.Sum,
+				par:             lag.PAR,
+				cv:              lag.Cv,
 				hasIssues:       hasIssues,
 				etaColor:        etaColor,
 				rateColor:       rateColor,
@@ -2343,6 +2511,24 @@ func (m *model) sortRowData(rows []*rowData) {
 		case "newrate":
 			less = rows[i].newRate < rows[j].newRate
 			if rows[i].newRate == rows[j].newRate {
+				if rows[i].sortGroup != rows[j].sortGroup {
+					less = rows[i].sortGroup < rows[j].sortGroup
+				} else {
+					less = rows[i].sortTopic < rows[j].sortTopic
+				}
+			}
+		case "par":
+			less = rows[i].par < rows[j].par
+			if rows[i].par == rows[j].par {
+				if rows[i].sortGroup != rows[j].sortGroup {
+					less = rows[i].sortGroup < rows[j].sortGroup
+				} else {
+					less = rows[i].sortTopic < rows[j].sortTopic
+				}
+			}
+		case "cv":
+			less = rows[i].cv < rows[j].cv
+			if rows[i].cv == rows[j].cv {
 				if rows[i].sortGroup != rows[j].sortGroup {
 					less = rows[i].sortGroup < rows[j].sortGroup
 				} else {

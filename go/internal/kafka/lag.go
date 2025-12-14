@@ -242,15 +242,33 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 				continue
 			}
 
+			maxLag := maxInt64(lags)
+			meanLag := meanInt64(lags)
+			
+			// Calculate PAR (Peak-to-Average Ratio): max lag / mean lag
+			par := 0.0
+			if meanLag > 0 {
+				par = float64(maxLag) / meanLag
+			}
+			
+			// Calculate Cv (Coefficient of Variation): stdev / mean
+			stdev := stdDevInt64(lags, meanLag)
+			cv := 0.0
+			if meanLag > 0 {
+				cv = stdev / meanLag
+			}
+			
 			stats := &types.LagStats{
 				Topic:         topic,
 				GroupID:       groupID,
 				PartitionLags: partLags,
 				Min:           minInt64(lags),
-				Max:           maxInt64(lags),
-				Mean:          meanInt64(lags),
+				Max:           maxLag,
+				Mean:          meanLag,
 				Median:        medianInt64(lags),
 				Sum:           sumInt64(lags),
+				PAR:           par,
+				Cv:            cv,
 			}
 
 			kd.GroupLags[groupID][topic] = stats
@@ -476,6 +494,21 @@ func medianInt64(values []int64) int64 {
 		return (sorted[mid-1] + sorted[mid]) / 2
 	}
 	return sorted[mid]
+}
+
+func stdDevInt64(values []int64, mean float64) float64 {
+	if len(values) == 0 || mean == 0 {
+		return 0
+	}
+	
+	sumSquaredDiff := 0.0
+	for _, v := range values {
+		diff := float64(v) - mean
+		sumSquaredDiff += diff * diff
+	}
+	
+	variance := sumSquaredDiff / float64(len(values))
+	return math.Sqrt(variance)
 }
 
 func formatDuration(d time.Duration) string {

@@ -185,6 +185,72 @@ These affect cell colors but **DO NOT** trigger row highlighting:
 
 The ETA calculation method (`--eta-method`) determines how ETA is calculated, which affects which rows meet the highlighting threshold.
 
+# 📈 Partition Load Uniformity Metrics
+
+The following metrics are used by `kafkatop` to assess how uniformly events are distributed across a Kafka topic's partitions. Non-uniformity (skew) is a critical issue that leads to performance bottlenecks, overloaded consumers, and inefficient resource usage.
+
+All calculations are based on the measured **events per second** (throughput) for each partition.
+
+---
+
+## 1. Coefficient of Variation ($C_v$)
+
+The Coefficient of Variation is the primary measure of **overall topic health** and the quality of your partitioning strategy. It is a unitless ratio that measures the **relative spread** of all partition loads.
+
+### Formula
+$$C_v = \frac{\sigma}{\mu}$$
+
+* **$\sigma$ (Standard Deviation):** Measures the absolute spread of all partition loads from the mean.
+* **$\mu$ (Mean):** The average events/second across all partitions.
+
+### Interpretation: Overall Topic Skew
+
+The $C_v$ tells you "How large is the variation *relative* to the average load?" You want this value to be as close to **0** as possible.
+
+| $C_v$ Value Range | Health Status | Implication |
+| :--- | :--- | :--- |
+| **$0.00 - 0.20$** | **Excellent / Healthy** | Near-perfect uniformity. The partitioning key works well. |
+| **$0.20 - 0.50$** | **Acceptable / Warning** | Manageable non-uniformity. Variation is noticeable but usually operational. |
+| **$0.50 - 1.00$** | **High Skew / Warning** | The spread is significant. Inefficient resource usage and potential consumer issues. |
+| **$> 1.00$** | **Critical Skew / Failure** | Severe imbalance. The typical partition load is more than 100% away from the average. **Urgent fix required.** |
+
+---
+
+## 2. Peak-to-Average Ratio (PAR) / Imbalance Ratio
+
+The Peak-to-Average Ratio is the most important metric for **capacity planning and immediate alerting**. It measures the load on the single busiest partition compared to the ideal average.
+
+### Formula
+$$PAR = \frac{\text{Load}_{\max}}{\mu}$$
+
+* **$\text{Load}_{\max}$:** The events/second of the single busiest (hottest) partition.
+* **$\mu$ (Mean):** The average events/second across all partitions.
+
+### Interpretation: Hotspot Severity
+
+The PAR tells you "How much harder is my single busiest consumer working compared to the ideal average?"
+
+| PAR Value | Implication | Consumer Status |
+| :--- | :--- | :--- |
+| **$1.00$** | **Perfectly Balanced.** | Ideal state. |
+| **$1.10$** | **10% Overloaded.** | Safe margin, minor efficiency loss. |
+| **$1.50$** | **50% Overloaded.** | A clear bottleneck. The consumer handling this partition may become lagged or unstable. |
+| **$2.00$** | **100% (2x) Overloaded.** | Severe hotspot. Indicates a critical failure in the partition key selection. **Immediate resolution is mandatory.** |
+
+---
+
+## 🔑 How to Use Both Metrics
+
+$C_v$ and PAR are complementary:
+
+| Scenario | $C_v$ (Topic Health) | PAR (Hotspot Severity) | Diagnosis and Action |
+| :--- | :--- | :--- | :--- |
+| **Ideal** | Low ($\approx 0.10$) | Low ($\approx 1.10$) | Healthy topic. |
+| **Localized Hotspot** | Low ($\approx 0.30$) | High ($\approx 5.0$) | Overall distribution is good, but one rare key is extremely hot. Focus on fixing that specific key. |
+| **Widespread Skew** | High ($\approx 0.80$) | Medium ($\approx 1.8$) | Skew is pervasive, meaning many keys are causing small imbalances. The partitioning function is generally poor and needs re-evaluation. |
+
+
+
 # Examples
 ## Screenshots
 

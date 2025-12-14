@@ -21,6 +21,10 @@ func ShowSummaryJSON(admin *kafka.AdminClient, params *types.Params) error {
 
 	summary := make(map[string]interface{})
 
+	// Track unique topics to fetch configs once per topic
+	topicsSeen := make(map[string]bool)
+	topicConfigs := make(map[string]map[string]string)
+
 	for groupID, groupLags := range kd.GroupLags {
 		state := kd.ConsumerGroups[groupID].State
 		groupData := map[string]interface{}{
@@ -29,11 +33,29 @@ func ShowSummaryJSON(admin *kafka.AdminClient, params *types.Params) error {
 		}
 
 		for topic, lag := range groupLags {
+			// Mark topic as seen
+			if !topicsSeen[topic] {
+				topicsSeen[topic] = true
+				// Fetch configs for this topic
+				configs, err := admin.GetTopicConfigs(ctx, topic)
+				if err == nil && configs != nil {
+					topicConfigs[topic] = configs
+				}
+			}
+
 			topicData := map[string]interface{}{
 				"partitions": len(lag.PartitionLags),
 				"lag_max":    lag.Max,
 				"lag_min":    lag.Min,
+				"par":        lag.PAR,
+				"cv":         lag.Cv,
 			}
+
+			// Add configs if available
+			if configs, exists := topicConfigs[topic]; exists && len(configs) > 0 {
+				topicData["configs"] = configs
+			}
+
 			groupData["topics"].(map[string]interface{})[topic] = topicData
 		}
 

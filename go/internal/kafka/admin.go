@@ -10,15 +10,19 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/sivann/kafkatop/internal/types"
 )
 
 // AdminClient wraps Kafka admin operations
 type AdminClient struct {
-	broker string
-	conn   *kafka.Conn
-	client *kafka.Client // Shared client for API calls
-	clientPool chan *kafka.Client // Pool of clients for parallel operations
+	broker      string
+	conn        *kafka.Conn
+	client      *kafka.Client // Shared client for API calls
+	clientPool  chan *kafka.Client // Pool of clients for parallel operations
+	franzClient *kgo.Client   // franz-go client for DescribeConfigs API
+	franzAdmin  *kadm.Client  // franz-go admin client
 }
 
 // NewAdminClient creates a new Kafka admin client
@@ -41,20 +45,44 @@ func NewAdminClient(broker string) (*AdminClient, error) {
 		Timeout: 10 * time.Second,
 	}
 
+	// Create franz-go client for DescribeConfigs API (pure Go, no cgo)
+	franzClient, err := kgo.NewClient(
+		kgo.SeedBrokers(broker),
+		kgo.RequestTimeoutOverhead(10*time.Second),
+	)
+	if err != nil {
+		// If franz-go client creation fails, continue without it (non-fatal)
+		// We'll just return empty configs
+		franzClient = nil
+	}
+
+	var franzAdmin *kadm.Client
+	if franzClient != nil {
+		franzAdmin = kadm.NewClient(franzClient)
+	}
+
 	return &AdminClient{
-		broker: broker,
-		conn:   conn,
-		client: sharedClient,
+		broker:     broker,
+		conn:       conn,
+		client:     sharedClient,
 		clientPool: nil, // No longer using a pool
+		franzClient: franzClient,
+		franzAdmin:  franzAdmin,
 	}, nil
 }
 
 // Close closes the admin client connection
 func (a *AdminClient) Close() error {
+	var err error
 	if a.conn != nil {
-		return a.conn.Close()
+		if closeErr := a.conn.Close(); closeErr != nil {
+			err = closeErr
+		}
 	}
-	return nil
+	if a.franzClient != nil {
+		a.franzClient.Close()
+	}
+	return err
 }
 
 // GetClientFromPool gets a client from the connection pool
@@ -542,19 +570,38 @@ func (a *AdminClient) GetTopicMetadata(ctx context.Context, topicName string) (*
 	return topicInfo, nil
 }
 
-// GetTopicConfigs gets topic configuration using DescribeConfigs API
+// GetTopicConfigs gets topic configuration using DescribeConfigs API via franz-go
 func (a *AdminClient) GetTopicConfigs(ctx context.Context, topicName string) (map[string]string, error) {
-	// Use DescribeConfigs API
-	// Note: kafka-go may not have a direct DescribeConfigs method, so we'll use Metadata API
-	// For now, return empty map - we'll need to check if kafka-go supports DescribeConfigs
-	// If not, we may need to use a different approach or library
-	
-	// Try using the client's DescribeConfigs if available
-	// This is a placeholder - actual implementation depends on kafka-go API
 	configs := make(map[string]string)
 	
-	// For now, return empty configs - we'll implement this properly if kafka-go supports it
-	// or use an alternative method
+	// Use franz-go admin client if available
+	if a.franzAdmin == nil {
+		// franz-go client not available, return empty configs
+		return configs, nil
+	}
+	
+	// Use franz-go's DescribeTopicConfigs API
+	describeResp, err := a.franzAdmin.DescribeTopicConfigs(ctx, topicName)
+	if err != nil {
+		// Return empty configs on error (non-fatal)
+		return configs, nil
+	}
+	
+	// Extract configs from response
+	for _, topicConfig := range describeResp {
+		if topicConfig.Err != nil {
+			continue
+		}
+		for _, config := range topicConfig.Configs {
+			// Include all configs (can filter sensitive/default ones later if needed)
+			// Use MaybeValue() which returns empty string for sensitive configs
+			value := config.MaybeValue()
+			if value != "" {
+				configs[config.Key] = value
+			}
+		}
+	}
+	
 	return configs, nil
 }
 

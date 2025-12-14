@@ -55,6 +55,8 @@ type LagStats struct {
 	Mean         float64
 	Median       int64
 	Sum          int64
+	PAR          float64 // Peak-to-Average Ratio: max lag / mean lag
+	Cv           float64 // Coefficient of Variation: stdev / mean
 }
 
 // RateStats represents consumption rate statistics
