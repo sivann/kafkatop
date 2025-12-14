@@ -124,6 +124,7 @@ type Params struct {
 	TimingOutput            interface{}       // Output for timing/profiling information (io.Writer, nil = disabled)
 	UseInitialBrokerOnly    bool              // Use only initial broker address, ignore advertised addresses (for port forwarding)
 	DNSMap                  map[string]string // Custom DNS mappings: hostname -> IP address
+	Debug                   bool              // Enable debug output
 }
 
 // ClusterInfo represents Kafka cluster information

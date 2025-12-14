@@ -37,6 +37,7 @@ func main() {
 	flag.IntVar(&params.KafkaMaxConcurrent, "max-concurrent", 10, "Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel)")
 	flag.BoolVar(&params.UseInitialBrokerOnly, "use-initial-broker-only", false, "Use only initial broker address, ignore advertised addresses (useful for port forwarding to single-node Kafka; multi-node clusters may have limited functionality)")
 	dnsMapFlag := flag.String("dns-map", "", "Custom DNS mappings: hostname1=ip1,hostname2=ip2 (e.g., broker-1.v240.svc.cluster.local=10.227.1.111)")
+	flag.BoolVar(&params.Debug, "debug", false, "Enable debug output")
 	showTiming := flag.Bool("timing", false, "Show timing/profiling information for lag calculation and exit")
 
 	flag.Parse()
@@ -80,7 +81,7 @@ func main() {
 	}
 
 	// Create Kafka admin client
-	admin, err := kafka.NewAdminClient(params.KafkaBroker, params.UseInitialBrokerOnly, params.DNSMap)
+	admin, err := kafka.NewAdminClient(params.KafkaBroker, params.UseInitialBrokerOnly, params.DNSMap, params.Debug)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to create admin client: %v\n", err)
 		os.Exit(1)

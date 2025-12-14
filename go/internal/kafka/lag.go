@@ -59,7 +59,9 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 		groupIDs = append(groupIDs, groupID)
 	}
 
-	fmt.Fprintf(os.Stderr, "DEBUG CalcLag: After ListConsumerGroups, have %d groups to describe\n", len(groupIDs))
+	if params.Debug {
+		fmt.Fprintf(os.Stderr, "DEBUG CalcLag: After ListConsumerGroups, have %d groups to describe\n", len(groupIDs))
+	}
 
 	// Determine max concurrent for parallelization
 	maxConcurrent := params.KafkaMaxConcurrent
@@ -75,7 +77,9 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 		return nil, fmt.Errorf("failed to describe consumer groups: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "DEBUG CalcLag: DescribeConsumerGroups returned %d groups\n", len(describedGroups))
+	if params.Debug {
+		fmt.Fprintf(os.Stderr, "DEBUG CalcLag: DescribeConsumerGroups returned %d groups\n", len(describedGroups))
+	}
 
 	// Update groups with description info and filter by state
 	emptyFilteredCount := 0
@@ -88,10 +92,12 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 		groups[groupID] = group
 	}
 
-	if emptyFilteredCount > 0 {
-		fmt.Fprintf(os.Stderr, "DEBUG CalcLag: Filtered out %d empty groups\n", emptyFilteredCount)
+	if params.Debug {
+		if emptyFilteredCount > 0 {
+			fmt.Fprintf(os.Stderr, "DEBUG CalcLag: Filtered out %d empty groups\n", emptyFilteredCount)
+		}
+		fmt.Fprintf(os.Stderr, "DEBUG CalcLag: After filtering, have %d groups for offset fetching\n", len(groups))
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG CalcLag: After filtering, have %d groups for offset fetching\n", len(groups))
 
 	kd.ConsumerGroups = groups
 
@@ -107,7 +113,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 			if err != nil {
 				// Skip groups with errors
 				errorCount++
-				if errorCount <= 5 { // Log first 5 errors
+				if params.Debug && errorCount <= 5 { // Log first 5 errors
 					fmt.Fprintf(os.Stderr, "DEBUG: Failed to get offsets for group %s: %v\n", groupID, err)
 				}
 				continue
@@ -118,8 +124,10 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 			}
 			kd.GroupOffsets[groupID] = offsets
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n", 
-			len(groups), successCount, successCount-emptyCount, emptyCount, errorCount)
+		if params.Debug {
+			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n", 
+				len(groups), successCount, successCount-emptyCount, emptyCount, errorCount)
+		}
 	} else {
 		// Parallel execution with semaphore
 		semaphore := make(chan struct{}, maxConcurrent)
@@ -144,7 +152,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 					mu.Lock()
 					errorCount++
 					// Only log first few errors to avoid spam
-					if errorCount <= 5 {
+					if params.Debug && errorCount <= 5 {
 						fmt.Fprintf(os.Stderr, "DEBUG: Failed to get offsets for group %s: %v\n", gid, err)
 					}
 					mu.Unlock()
@@ -161,8 +169,10 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 			}(groupID)
 		}
 		wg.Wait()
-		fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n", 
-			len(groups), successCount, successCount-emptyCount, emptyCount, errorCount)
+		if params.Debug {
+			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n", 
+				len(groups), successCount, successCount-emptyCount, emptyCount, errorCount)
+		}
 	}
 	stats.ListGroupOffsets = time.Since(t2)
 	kd.GroupOffsetsTS = time.Now()
@@ -205,8 +215,10 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 			kd.TopicsWithGroups[topic].Groups = append(kd.TopicsWithGroups[topic].Groups, groupID)
 		}
 	}
-	// Debug output (always to stderr for visibility)
-	fmt.Fprintf(os.Stderr, "DEBUG CalcLag: Found %d unique topics from %d groups with offsets\n", len(kd.TopicsWithGroups), len(kd.GroupOffsets))
+	// Debug output
+	if params.Debug {
+		fmt.Fprintf(os.Stderr, "DEBUG CalcLag: Found %d unique topics from %d groups with offsets\n", len(kd.TopicsWithGroups), len(kd.GroupOffsets))
+	}
 	stats.BuildTopicsMap = time.Since(t3)
 
 	// Get topic offsets (parallelized if configured)

@@ -26,11 +26,13 @@ type AdminClient struct {
 	franzClient         *kgo.Client   // franz-go client for DescribeConfigs API
 	franzAdmin          *kadm.Client  // franz-go admin client
 	useInitialBrokerOnly bool          // If true, force all operations to use initial broker
+	debug                bool          // Enable debug output
 }
 
 // dnsMapResolver is a custom resolver that uses DNS mappings
 type dnsMapResolver struct {
 	dnsMap map[string]string
+	debug  bool
 }
 
 func (r *dnsMapResolver) LookupBrokerIPAddr(ctx context.Context, broker kafka.Broker) ([]net.IPAddr, error) {
@@ -38,10 +40,19 @@ func (r *dnsMapResolver) LookupBrokerIPAddr(ctx context.Context, broker kafka.Br
 	if ipStr, exists := r.dnsMap[broker.Host]; exists {
 		ip := net.ParseIP(ipStr)
 		if ip != nil {
+			if r.debug {
+				fmt.Fprintf(os.Stderr, "DEBUG DNS Resolver: Mapped %s -> %s\n", broker.Host, ipStr)
+			}
 			return []net.IPAddr{{IP: ip}}, nil
+		}
+		if r.debug {
+			fmt.Fprintf(os.Stderr, "DEBUG DNS Resolver: Mapping exists for %s but IP %s is invalid\n", broker.Host, ipStr)
 		}
 	}
 	// Fall back to normal DNS resolution
+	if r.debug {
+		fmt.Fprintf(os.Stderr, "DEBUG DNS Resolver: No mapping for %s, using normal DNS\n", broker.Host)
+	}
 	resolver := &net.Resolver{}
 	addrs, err := resolver.LookupIPAddr(ctx, broker.Host)
 	if err != nil {
@@ -56,7 +67,8 @@ func (r *dnsMapResolver) LookupBrokerIPAddr(ctx context.Context, broker kafka.Br
 // For multi-node clusters, some operations (like OffsetFetch to coordinators) may fail
 // because coordinators may not be accessible through the port-forwarded broker.
 // When dnsMap is provided, custom DNS resolution is used to map hostnames to IPs.
-func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]string) (*AdminClient, error) {
+// When debug is true, debug output is printed to stderr.
+func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]string, debug bool) (*AdminClient, error) {
 	// Add default port if not specified
 	if matched, _ := regexp.MatchString(`:\d+$`, broker); !matched {
 		broker = broker + ":9092"
@@ -71,7 +83,10 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]
 	// Create a custom resolver if DNS mappings are provided
 	var customResolver kafka.BrokerResolver
 	if len(dnsMap) > 0 {
-		customResolver = &dnsMapResolver{dnsMap: dnsMap}
+		customResolver = &dnsMapResolver{dnsMap: dnsMap, debug: debug}
+		if debug {
+			fmt.Fprintf(os.Stderr, "DEBUG: Using custom DNS resolver with %d mappings\n", len(dnsMap))
+		}
 	}
 
 	// Create a single shared client for all operations
@@ -186,6 +201,7 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]
 		franzClient:         franzClient,
 		franzAdmin:          franzAdmin,
 		useInitialBrokerOnly: useInitialBrokerOnly,
+		debug:                debug,
 	}, nil
 }
 
@@ -232,7 +248,7 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 	}
 	
 	// Debug: log how many groups we got
-	if a.useInitialBrokerOnly {
+	if a.debug {
 		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Got %d groups from ListGroups\n", len(response.Groups))
 	}
 
@@ -281,7 +297,7 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 		}
 	}
 	
-	if a.useInitialBrokerOnly {
+	if a.debug {
 		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Pattern matched %d unique groups (excluded %d, duplicates skipped %d). Sample: %v\n", 
 			matchedCount, excludedCount, duplicateCount, sampleGroups)
 		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Actually returning %d groups from map\n", len(groups))
@@ -527,18 +543,18 @@ func (a *AdminClient) ListConsumerGroupOffsetsWithClient(ctx context.Context, gr
 		req.Addr = kafka.TCP(a.broker)
 	}
 	response, err := client.OffsetFetch(ctx, req)
-	if err != nil {
-		// Debug: log errors when useInitialBrokerOnly is enabled
-		if a.useInitialBrokerOnly {
-			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Failed for group %s: %v\n", groupID, err)
+		if err != nil {
+			// Debug: log errors
+			if a.debug {
+				fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Failed for group %s: %v\n", groupID, err)
+			}
+			return nil, fmt.Errorf("failed to fetch offsets for group %s: %w", groupID, err)
 		}
-		return nil, fmt.Errorf("failed to fetch offsets for group %s: %w", groupID, err)
-	}
-	
-	// Debug: check if response is empty
-	if a.useInitialBrokerOnly && len(response.Topics) == 0 {
-		fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Group %s returned empty topics\n", groupID)
-	}
+		
+		// Debug: check if response is empty
+		if a.debug && len(response.Topics) == 0 {
+			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Group %s returned empty topics\n", groupID)
+		}
 
 	offsets := &types.ConsumerGroupOffset{
 		GroupID:      groupID,
@@ -600,7 +616,9 @@ func (a *AdminClient) ListTopicOffsetsWithClient(ctx context.Context, topic stri
 	// Debug: log if we got incomplete results
 	if a.useInitialBrokerOnly {
 		if topicOffsets, ok := response.Topics[topic]; ok {
-			fmt.Fprintf(os.Stderr, "DEBUG ListTopicOffsets: Topic %s requested %d partitions, got %d\n", topic, len(partitions), len(topicOffsets))
+			if a.debug {
+				fmt.Fprintf(os.Stderr, "DEBUG ListTopicOffsets: Topic %s requested %d partitions, got %d\n", topic, len(partitions), len(topicOffsets))
+			}
 		}
 	}
 
