@@ -89,6 +89,7 @@ type model struct {
 	detailTopic     string
 	detailScrollOffset int
 	detailPartitionSortKey string // Sort partitions: "" = by partition number, "lag" = by lag, "offset" = by offset
+	detailTopicMetadata *types.TopicInfo // Cached topic metadata for detail view
 	showHelp        bool
 	followMode      bool
 	showFullNumbers bool
@@ -564,10 +565,10 @@ func (m *model) viewDetail() string {
 	}
 
 	// Calculate space allocation - count actual newlines:
-	// Header: title (1) + "\n\n" (2) + Total Lag (1) + Min (1) + Consumption Rate (1) + Arrival Rate (1) + ETA (1) + "\n" (1) + table header (1) + separator (1) = 11 lines
+	// Header: title (1) + "\n\n" (2) + ReplicationFactor/Configs (1) + Total Lag (1) + Min (1) + Consumption Rate (1) + Arrival Rate (1) + ETA (1) + "\n" (1) + table header (1) + separator (1) = 12 lines
 	// Footer: "\n" (1) + scroll info (1) + "\n" (1) + "Press Esc" (1) = 4 lines  
-	// Total reserved: 15 lines
-	headerLines := 11
+	// Total reserved: 16 lines
+	headerLines := 12
 	footerLines := 4
 	maxPartitionRows := m.height - headerLines - footerLines
 	if maxPartitionRows < 1 {
@@ -596,9 +597,38 @@ func (m *model) viewDetail() string {
 		endIdx = len(partitions)
 	}
 
+	// Fetch topic metadata if not cached
+	if m.detailTopicMetadata == nil || m.detailTopicMetadata.Name != m.detailTopic {
+		ctx := context.Background()
+		metadata, err := m.admin.GetTopicMetadata(ctx, m.detailTopic)
+		if err == nil {
+			m.detailTopicMetadata = metadata
+		}
+	}
+
 	// Render header (always visible) - start at top of screen
 	b.WriteString(headerStyle.Render(fmt.Sprintf("Partition Details: %s / %s", m.detailGroup, m.detailTopic)))
 	b.WriteString("\n\n")
+
+	// Display topic-level metadata
+	if m.detailTopicMetadata != nil {
+		metadataParts := []string{}
+		if m.detailTopicMetadata.TopicID != "" {
+			metadataParts = append(metadataParts, fmt.Sprintf("TopicID: %s", m.detailTopicMetadata.TopicID))
+		}
+		metadataParts = append(metadataParts, fmt.Sprintf("ReplicationFactor: %d", m.detailTopicMetadata.ReplicationFactor))
+		if len(m.detailTopicMetadata.Configs) > 0 {
+			configPairs := make([]string, 0, len(m.detailTopicMetadata.Configs))
+			for k, v := range m.detailTopicMetadata.Configs {
+				configPairs = append(configPairs, fmt.Sprintf("%s=%s", k, v))
+			}
+			sort.Strings(configPairs) // Sort for consistent display
+			metadataParts = append(metadataParts, fmt.Sprintf("Configs: %s", strings.Join(configPairs, ",")))
+		}
+		if len(metadataParts) > 0 {
+			b.WriteString(strings.Join(metadataParts, "  ") + "\n")
+		}
+	}
 
 	b.WriteString(fmt.Sprintf("Total Lag: %s\n", formatNumber(m.showFullNumbers, lagStats.Sum)))
 	b.WriteString(fmt.Sprintf("Min: %s, Max: %s, Mean: %.1f, Median: %s\n",
@@ -635,37 +665,62 @@ func (m *model) viewDetail() string {
 			}
 		}
 		
-		// Format with proper width (accounting for ANSI codes in width calculation)
-		// First format plain text to get correct width, then replace with colored version
-		var plainFormatted string
+		// Format with proper width - format the colored text directly
+		// ANSI codes don't count toward width, so we need to pad based on the plain text length
+		plainLen := len(text)
 		if rightAlign {
-			plainFormatted = fmt.Sprintf("%*s", width, text)
+			if plainLen < width {
+				// Pad on the left
+				padding := strings.Repeat(" ", width-plainLen)
+				return padding + coloredText
+			}
+			return coloredText
 		} else {
-			plainFormatted = fmt.Sprintf("%-*s", width, text)
+			if plainLen < width {
+				// Pad on the right
+				padding := strings.Repeat(" ", width-plainLen)
+				return coloredText + padding
+			}
+			return coloredText
 		}
-		
-		// Replace the plain text with colored version
-		return strings.Replace(plainFormatted, text, coloredText, 1)
 	}
 	
 	// Build header with highlighted hotkeys (preserving column widths)
-	partitionHeader := fmt.Sprintf("%-9s", "Partition")
+	// Column widths must match data row formatting exactly:
+	// Partition: 9 chars (right-aligned in data)
+	// Topic: 24 chars (left-aligned)
+	// Group Offset: 12 chars (right-aligned in data)
+	// Topic Offset: 12 chars (right-aligned in data)
+	// Lag: 9 chars (left-aligned in data)
+	// Rate: 16 chars (left-aligned in data)
+	// Replica IDs: 20 chars (left-aligned)
+	// ISR: 20 chars (left-aligned)
+	// Leader: 8 chars (left-aligned)
+	partitionHeader := fmt.Sprintf("%9s", "Partition") // Right-aligned to match %9d
 	topicHeader := fmt.Sprintf("%-24s", "Topic")
-	groupOffsetHeader := formatDetailHeaderHotkey("Group Offset", "G", "groupoffset", 13, false)
-	topicOffsetHeader := formatDetailHeaderHotkey("Topic Offset", "T", "topicoffset", 13, false)
+	groupOffsetHeader := formatDetailHeaderHotkey("Group Offset", "G", "groupoffset", 12, true) // Right-aligned to match %12s
+	topicOffsetHeader := formatDetailHeaderHotkey("Topic Offset", "T", "topicoffset", 12, true) // Right-aligned to match %12s
 	lagHeader := formatDetailHeaderHotkey("Lag", "L", "lag", 9, false)
 	rateHeader := formatDetailHeaderHotkey("Rate (evts/sec)", "R", "rate", 16, false)
+	replicasHeader := fmt.Sprintf("%-20s", "Replica IDs")
+	isrHeader := fmt.Sprintf("%-20s", "ISR")
+	leaderHeader := fmt.Sprintf("%-8s", "Leader")
 	
-	headerLine := fmt.Sprintf("%s | %s | %s | %s | %s | %s",
+	headerLine := fmt.Sprintf("%s | %s | %s | %s | %s | %s | %s | %s | %s",
 		partitionHeader,
 		topicHeader,
 		groupOffsetHeader,
 		topicOffsetHeader,
 		lagHeader,
-		rateHeader)
+		rateHeader,
+		replicasHeader,
+		isrHeader,
+		leaderHeader)
 	
 	b.WriteString(headerLine + "\n")
-	b.WriteString("----------|--------------------------|--------------|--------------|----------|----------------\n")
+	// Separator line must match exact column widths:
+	// Partition: 9, Topic: 24, Group Offset: 12, Topic Offset: 12, Lag: 9, Rate: 16, Replica IDs: 20, ISR: 20, Leader: 8
+	b.WriteString("---------|------------------------|------------|------------|---------|----------------|--------------------|--------------------|--------\n")
 
 	// Calculate min/max for lag and rate to determine color gradients
 	var minLag, maxLag int64 = 0, 0
@@ -766,13 +821,55 @@ func (m *model) viewDetail() string {
 		lagStr := formatNumber(m.showFullNumbers, lag)
 		rateStr := formatRate(m.showFullNumbers, partitionRate)
 		
-		b.WriteString(fmt.Sprintf("%9d | %-24s | %12s | %12s | %s%-9s%s | %s%s%s\n",
+		// Get partition metadata
+		var replicasStr, isrStr, leaderStr string
+		if m.detailTopicMetadata != nil {
+			// Find partition info
+			for _, partInfo := range m.detailTopicMetadata.PartInfo {
+				if partInfo.ID == part {
+					// Format replicas
+					replicaStrs := make([]string, len(partInfo.Replicas))
+					for i, r := range partInfo.Replicas {
+						replicaStrs[i] = fmt.Sprintf("%d", r)
+					}
+					replicasStr = fmt.Sprintf("(%s)", strings.Join(replicaStrs, ","))
+					
+					// Format ISR
+					isrStrs := make([]string, len(partInfo.ISRs))
+					for i, isr := range partInfo.ISRs {
+						isrStrs[i] = fmt.Sprintf("%d", isr)
+					}
+					isrStr = fmt.Sprintf("(%s)", strings.Join(isrStrs, ","))
+					
+					// Format leader
+					leaderStr = fmt.Sprintf("%d", partInfo.Leader)
+					break
+				}
+			}
+		}
+		if replicasStr == "" {
+			replicasStr = "-"
+		}
+		if isrStr == "" {
+			isrStr = "-"
+		}
+		if leaderStr == "" {
+			leaderStr = "-"
+		}
+		
+		// Format rate with proper width (16 chars) to match header
+		rateStrFormatted := fmt.Sprintf("%-16s", rateStr)
+		
+		b.WriteString(fmt.Sprintf("%9d | %-24s | %12s | %12s | %s%-9s%s | %s%s%s | %-20s | %-20s | %-8s\n",
 			part,
 			displayTopic,
 			formatNumber(m.showFullNumbers, groupOffset),
 			formatNumber(m.showFullNumbers, topicOffset),
 			lagColor, lagStr, colorReset,
-			rateColor, rateStr, colorReset))
+			rateColor, rateStrFormatted, colorReset,
+			replicasStr,
+			isrStr,
+			leaderStr))
 	}
 
 	// Render footer (always visible)
@@ -1031,10 +1128,11 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.selectedRowIdx >= 0 && m.selectedRowIdx < len(rows) {
 			row := rows[m.selectedRowIdx]
 			m.showDetail = true
-		m.detailGroup = row.sortGroup
-		m.detailTopic = row.sortTopic
-		m.detailScrollOffset = 0 // Reset scroll to show header
-		m.detailPartitionSortKey = "" // Reset sort to default
+			m.detailGroup = row.sortGroup
+			m.detailTopic = row.sortTopic
+			m.detailScrollOffset = 0 // Reset scroll to show header
+			m.detailPartitionSortKey = "" // Reset sort to default
+			m.detailTopicMetadata = nil // Clear cached metadata (will be fetched in viewDetail)
 		}
 		return m, nil
 
@@ -1341,12 +1439,13 @@ func (m *model) handleHelpKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q":
+		case "esc", "q":
 		m.showDetail = false
 		m.detailGroup = ""
 		m.detailTopic = ""
 		m.detailScrollOffset = 0
 		m.detailPartitionSortKey = ""
+		m.detailTopicMetadata = nil // Clear cached metadata
 		return m, nil
 	case "j", "down":
 		m.detailScrollOffset++
@@ -1358,7 +1457,7 @@ func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case " ", "pgdown":
 		// Page down in detail view
-		maxRows := m.height - 15
+		maxRows := m.height - 16
 		if maxRows < 5 {
 			maxRows = 5
 		}
@@ -1366,7 +1465,7 @@ func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "b", "pgup":
 		// Page up in detail view
-		maxRows := m.height - 15
+		maxRows := m.height - 16
 		if maxRows < 5 {
 			maxRows = 5
 		}

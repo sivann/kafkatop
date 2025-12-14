@@ -132,9 +132,12 @@ type ClusterInfo struct {
 
 // TopicInfo represents information about a Kafka topic
 type TopicInfo struct {
-	Name       string
-	Partitions int
-	PartInfo   []PartitionInfo
+	Name              string
+	TopicID           string // Topic ID (UUID) - empty if not available
+	Partitions        int
+	PartInfo          []PartitionInfo
+	ReplicationFactor int
+	Configs           map[string]string // topic configs
 }
 
 // PartitionInfo represents information about a partition
@@ -142,7 +145,7 @@ type PartitionInfo struct {
 	ID       int32
 	Leader   int32
 	Replicas []int32
-	ISRs     int
+	ISRs     []int32 // ISR broker IDs (not just count)
 }
 
 // BrokerInfo represents information about a broker

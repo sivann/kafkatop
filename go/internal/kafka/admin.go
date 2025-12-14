@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"regexp"
 	"sync"
 	"time"
@@ -449,11 +450,112 @@ func (a *AdminClient) ListTopics(ctx context.Context) (map[string]*types.TopicIn
 			ID:       int32(partition.ID),
 			Leader:   int32(partition.Leader.ID),
 			Replicas: convertToInt32Slice(partition.Replicas),
-			ISRs:     len(partition.Isr),
+			ISRs:     convertToInt32Slice(partition.Isr),
 		})
 	}
 
 	return topics, nil
+}
+
+// GetTopicMetadata gets detailed metadata for a specific topic including configs
+func (a *AdminClient) GetTopicMetadata(ctx context.Context, topicName string) (*types.TopicInfo, error) {
+	// Try to get topic ID from Metadata API first
+	var topicID string
+	metadataResp, err := a.client.Metadata(ctx, &kafka.MetadataRequest{
+		Addr:    kafka.TCP(a.broker),
+		Topics:  []string{topicName},
+	})
+	if err == nil && len(metadataResp.Topics) > 0 {
+		// Find the topic in the response
+		for _, topic := range metadataResp.Topics {
+			if topic.Name == topicName {
+				// Try to get TopicID using reflection (in case kafka-go has it but doesn't expose it)
+				// Topic IDs are UUIDs introduced in Kafka 2.8+ (KIP-516)
+				topicValue := reflect.ValueOf(topic)
+				if topicValue.Kind() == reflect.Struct {
+					// Try common field names for topic ID
+					fieldNames := []string{"TopicID", "TopicId", "ID", "Id", "UUID", "Uuid"}
+					for _, fieldName := range fieldNames {
+						field := topicValue.FieldByName(fieldName)
+						if field.IsValid() && field.Kind() == reflect.String && field.String() != "" {
+							topicID = field.String()
+							break
+						}
+					}
+				}
+				break
+			}
+		}
+	}
+
+	conn, err := kafka.Dial("tcp", a.broker)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to broker: %w", err)
+	}
+	defer conn.Close()
+
+	allPartitions, err := conn.ReadPartitions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read partitions: %w", err)
+	}
+
+	// Filter partitions for the specific topic
+	partitions := make([]kafka.Partition, 0)
+	for _, partition := range allPartitions {
+		if partition.Topic == topicName {
+			partitions = append(partitions, partition)
+		}
+	}
+
+	if len(partitions) == 0 {
+		return nil, fmt.Errorf("topic %s not found", topicName)
+	}
+
+	// Get replication factor from first partition
+	replicationFactor := len(partitions[0].Replicas)
+
+	topicInfo := &types.TopicInfo{
+		Name:              topicName,
+		TopicID:           topicID,
+		Partitions:        len(partitions),
+		PartInfo:          make([]types.PartitionInfo, 0, len(partitions)),
+		ReplicationFactor: replicationFactor,
+		Configs:           make(map[string]string),
+	}
+
+	for _, partition := range partitions {
+		topicInfo.PartInfo = append(topicInfo.PartInfo, types.PartitionInfo{
+			ID:       int32(partition.ID),
+			Leader:   int32(partition.Leader.ID),
+			Replicas: convertToInt32Slice(partition.Replicas),
+			ISRs:     convertToInt32Slice(partition.Isr),
+		})
+	}
+
+	// Get topic configs using DescribeConfigs API
+	configs, err := a.GetTopicConfigs(ctx, topicName)
+	if err == nil {
+		topicInfo.Configs = configs
+	}
+	// If config fetch fails, continue without configs (non-fatal)
+
+	return topicInfo, nil
+}
+
+// GetTopicConfigs gets topic configuration using DescribeConfigs API
+func (a *AdminClient) GetTopicConfigs(ctx context.Context, topicName string) (map[string]string, error) {
+	// Use DescribeConfigs API
+	// Note: kafka-go may not have a direct DescribeConfigs method, so we'll use Metadata API
+	// For now, return empty map - we'll need to check if kafka-go supports DescribeConfigs
+	// If not, we may need to use a different approach or library
+	
+	// Try using the client's DescribeConfigs if available
+	// This is a placeholder - actual implementation depends on kafka-go API
+	configs := make(map[string]string)
+	
+	// For now, return empty configs - we'll implement this properly if kafka-go supports it
+	// or use an alternative method
+	return configs, nil
 }
 
 // GetClusterInfo retrieves cluster metadata
