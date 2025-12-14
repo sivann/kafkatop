@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/sivann/kafkatop/internal/kafka"
 	"github.com/sivann/kafkatop/internal/types"
 )
@@ -34,20 +33,10 @@ const (
 	colorReverse = "\033[7m"
 )
 
-var (
-	baseStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("240"))
-
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("86"))
-
-	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("229")).
-			Background(lipgloss.Color("57")).
-			Bold(true)
-)
+// Helper function to render header text with styling
+func renderHeader(text string) string {
+	return colorBrightWhite + colorBold + text + colorReset
+}
 
 type model struct {
 	admin           *kafka.AdminClient
@@ -92,6 +81,7 @@ type model struct {
 	detailPartitionSortKey string // Sort partitions: "" = by partition number, "lag" = by lag, "offset" = by offset
 	detailTopicMetadata *types.TopicInfo // Cached topic metadata for detail view
 	showHelp        bool
+	helpScrollOffset int // Scroll offset for help screen
 	followMode      bool
 	showFullNumbers bool
 	lastUpdateTime  time.Time
@@ -110,7 +100,7 @@ type statusMsg string
 func ShowRich(admin *kafka.AdminClient, params *types.Params) error {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	// Spinner styling is handled by bubbletea defaults
 
 	ti := textinput.New()
 	ti.Placeholder = "Enter regex pattern..."
@@ -330,7 +320,7 @@ func (m *model) viewFilterDialog() string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(headerStyle.Render("Filter Consumer Groups"))
+	b.WriteString(renderHeader("Filter Consumer Groups"))
 	b.WriteString("\n\n")
 
 	currentFilter := m.filterPattern
@@ -350,7 +340,7 @@ func (m *model) viewTopicFilterDialog() string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(headerStyle.Render("Filter Topics"))
+	b.WriteString(renderHeader("Filter Topics"))
 	b.WriteString("\n\n")
 
 	currentFilter := m.topicFilterPattern
@@ -370,7 +360,7 @@ func (m *model) viewSearchDialog() string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(headerStyle.Render("Search"))
+	b.WriteString(renderHeader("Search"))
 	b.WriteString("\n\n")
 
 	b.WriteString(m.searchInput.View())
@@ -388,75 +378,427 @@ func (m *model) viewSearchDialog() string {
 	return b.String()
 }
 
+// Helper function to wrap text to a given width
+func wrapText(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+	
+	var lines []string
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	
+	currentLine := words[0]
+	for _, word := range words[1:] {
+		// Check if adding this word would exceed width
+		if len(currentLine)+1+len(word) <= width {
+			currentLine += " " + word
+		} else {
+			// Save current line and start new one
+			lines = append(lines, currentLine)
+			currentLine = word
+		}
+	}
+	lines = append(lines, currentLine)
+	return lines
+}
+
 func (m *model) viewHelp() string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(headerStyle.Render("Help - Keyboard Shortcuts"))
+	b.WriteString(renderHeader("Help - Keyboard Shortcuts"))
 	b.WriteString("\n\n")
 
-	b.WriteString("Navigation:\n")
-	b.WriteString("  ↑/↓, J/K     Scroll up/down\n")
-	b.WriteString("  Space/B      Page down/up\n")
-	b.WriteString("  Home/End     Jump to top/bottom\n")
-	b.WriteString("\n")
+	// Parse raw data into structured rows for 5-column table
+	// Columns: leftKey, leftDesc, spacer, rightKey, rightDesc
+	type helpRowData struct {
+		leftKey   string
+		leftDesc  string
+		rightKey  string
+		rightDesc string
+		isHeader  bool
+		isEmpty   bool
+	}
 
-	b.WriteString("Actions:\n")
-	b.WriteString("  Q             Quit\n")
-	b.WriteString("  P             Pause/resume updates\n")
-	b.WriteString("  +/-           Adjust refresh rate\n")
-	b.WriteString("  F             Filter consumer groups\n")
-	b.WriteString("  X             Filter topics\n")
-	b.WriteString("  /             Search\n")
-	b.WriteString("  ? or H        Show this help\n")
-	b.WriteString("  Enter or D    View partition details\n")
-	b.WriteString("  Esc           Close dialogs/details\n")
-	b.WriteString("\n")
+	// Helper function to highlight keys in text
+	highlightKeysInText := func(text string) string {
+		parts := regexp.MustCompile(`([^/\s,]+)`).FindAllString(text, -1)
+		if len(parts) == 0 {
+			return text
+		}
+		result := text
+		for _, part := range parts {
+			if strings.ToLower(part) == "or" {
+				continue
+			}
+			highlighted := colorBrightGreen + colorBold + part + colorReset
+			result = strings.Replace(result, part, highlighted, 1)
+		}
+		return result
+	}
 
-	b.WriteString("Sorting:\n")
-	b.WriteString("  G             Sort by Group\n")
-	b.WriteString("  O             Sort by Topic\n")
-	b.WriteString("  P             Sort by Partitions\n")
-	b.WriteString("  T or t        Sort by Time Left\n")
-	b.WriteString("  L             Sort by Lag\n")
-	b.WriteString("  N             Sort by New topic rate\n")
-	b.WriteString("  C             Sort by Consumed rate\n")
-	b.WriteString("\n")
 
-	b.WriteString("Partition Details:\n")
-	b.WriteString("  S             Sort partitions by lag+offset\n")
-	b.WriteString("  Space/B       Page down/up\n")
-	b.WriteString("\n")
+	// Left column data
+	leftData := []struct {
+		header string
+		items  []struct{ key, desc string }
+	}{
+		{
+			header: "Navigation:",
+			items: []struct{ key, desc string }{
+				{"↑/↓, J/K", "Scroll up/down"},
+				{"Space/B", "Page down/up"},
+				{"Home/End", "Jump to top/bottom"},
+			},
+		},
+		{
+			header: "Actions:",
+			items: []struct{ key, desc string }{
+				{"Q", "Quit"},
+				{"P", "Pause/resume updates"},
+				{"+/-", "Adjust refresh rate"},
+				{"F", "Filter consumer groups"},
+				{"X", "Filter topics"},
+				{"/", "Search"},
+				{"? or H", "Show this help"},
+				{"Enter or D", "View partition details"},
+				{"Esc", "Close dialogs/details"},
+			},
+		},
+		{
+			header: "Sorting:",
+			items: []struct{ key, desc string }{
+				{"G", "Sort by Group"},
+				{"O", "Sort by Topic"},
+				{"P", "Sort by Partitions"},
+				{"T", "Sort by Time Left"},
+				{"L", "Sort by Lag"},
+				{"N", "Sort by New topic rate"},
+				{"C", "Sort by Consumed rate"},
+				{"A", "Sort by PAR"},
+				{"V", "Sort by Cv"},
+			},
+		},
+		{
+			header: "Partition Details:",
+			items: []struct{ key, desc string }{
+				{"L", "Sort by Lag"},
+				{"G", "Sort by Group offset"},
+				{"T", "Sort by Topic offset"},
+				{"R", "Sort by Rate"},
+				{"Space/B", "Page down/up"},
+			},
+		},
+		{
+			header: "Other:",
+			items: []struct{ key, desc string }{
+				{"E", "Toggle human-readable/plain"},
+				{"U", "Toggle full numbers (alias)"},
+				{"Ctrl+F", "Toggle follow mode"},
+			},
+		},
+	}
 
-	b.WriteString("Column Descriptions:\n")
-	b.WriteString("  Group         Consumer group name\n")
-	b.WriteString("  Topic         Kafka topic name\n")
-	b.WriteString("  Partitions    Number of partitions\n")
-	b.WriteString("  Since         Time since last update (seconds)\n")
-	b.WriteString("  Events        Total events consumed\n")
-	b.WriteString("  New topic     Arrival rate (events/sec)\n")
-	b.WriteString("  Consumed      Consumption rate (events/sec)\n")
-	b.WriteString("  Time Left     Estimated time to consume all lag\n")
-	b.WriteString("  Lag           Total lag across all partitions\n")
-	b.WriteString("\n")
+	// Right column data
+	rightData := []struct {
+		header string
+		items  []struct{ key, desc string }
+	}{
+		{
+			header: "Column Descriptions:",
+			items: []struct{ key, desc string }{
+				{"Group", "Consumer group name"},
+				{"Topic", "Kafka topic name"},
+				{"Partitions", "Number of partitions"},
+				{"Since", "Time since last update (sec)"},
+				{"Events", "Total events consumed"},
+				{"New topic", "Arrival rate (events/sec)"},
+				{"Consumed", "Consumption rate (events/sec)"},
+				{"Time Left", "Estimated time to consume lag"},
+				{"Lag", "Total lag across partitions"},
+			},
+		},
+		{
+			header: "Partition Health:",
+			items: []struct{ key, desc string }{
+				{"PAR", "Peak-to-Average ratio: worst-case burden on the single most overloaded consumer"},
+				{"Cv", "Coefficient of Variation (StdDev/mean). How uniformly load is distributed: 0 = perfect, 0.5-1 = high skew, >1 = critical skew (stddev > mean): action required (e.g., key salting, change partitioner)"},
+			},
+		},
+	}
 
-	b.WriteString("Partition Health:\n")
-	b.WriteString("  PAR           Peak-to-Average ratio: worst-case burden\n")
-	b.WriteString("                on the single most overloaded consumer\n")
-	b.WriteString("  Cv            Coefficient of Variation (StdDev/mean).\n")
-	b.WriteString("                How uniformly load is distributed:\n")
-	b.WriteString("                0 = perfect, 0.5-1 = high skew,\n")
-	b.WriteString("                >1 = critical skew (standard deviation > mean):\n")
-	b.WriteString("                action required (e.g., key salting, change partitioner)\n")
-	b.WriteString("\n")
+	// Build table rows from structured data
+	tableRows := make([]table.Row, 0)
+	
+	// Find max key widths for alignment
+	maxLeftKeyWidth := 0
+	maxRightKeyWidth := 0
+	for _, section := range leftData {
+		for _, item := range section.items {
+			if len(item.key) > maxLeftKeyWidth {
+				maxLeftKeyWidth = len(item.key)
+			}
+		}
+	}
+	for _, section := range rightData {
+		for _, item := range section.items {
+			if len(item.key) > maxRightKeyWidth {
+				maxRightKeyWidth = len(item.key)
+			}
+		}
+	}
 
-	b.WriteString("Other:\n")
-	b.WriteString("  E             Toggle human-readable/plain numbers\n")
-	b.WriteString("  U             Toggle full numbers (alias for E)\n")
-	b.WriteString("  Ctrl+F        Toggle follow mode\n")
-	b.WriteString("\n")
+	// Helper to format key (right-aligned) with ":"
+	formatKey := func(key string, maxKeyWidth int, isHeader bool) string {
+		if isHeader {
+			return colorCyan + colorBold + key + colorReset
+		}
+		if key == "" {
+			return ""
+		}
+		// Right-align key
+		keyPadding := maxKeyWidth - len(key)
+		if keyPadding < 0 {
+			keyPadding = 0
+		}
+		formattedKey := highlightKeysInText(key)
+		return strings.Repeat(" ", keyPadding) + formattedKey + ":"
+	}
 
-	b.WriteString("Press ? or H or Esc to close\n")
+	// Build rows by interleaving left and right sections
+	// Create a list of all left and right rows first, then pair them
+	leftRows := make([]helpRowData, 0)
+	rightRows := make([]helpRowData, 0)
+	
+	// Build all left rows
+	for _, section := range leftData {
+		// Add section header
+		leftRows = append(leftRows, helpRowData{
+			leftKey: formatKey(section.header, maxLeftKeyWidth, true),
+		})
+		// Add section items
+		for _, item := range section.items {
+			leftRows = append(leftRows, helpRowData{
+				leftKey:  formatKey(item.key, maxLeftKeyWidth, false),
+				leftDesc: item.desc,
+			})
+		}
+	}
+	
+	// Build all right rows
+	for _, section := range rightData {
+		// Add section header
+		rightRows = append(rightRows, helpRowData{
+			rightKey: formatKey(section.header, maxRightKeyWidth, true),
+		})
+		// Add section items
+		for _, item := range section.items {
+			keyStr := colorBrightWhite + colorBold + item.key + colorReset
+			keyPadding := maxRightKeyWidth - len(item.key)
+			if keyPadding < 0 {
+				keyPadding = 0
+			}
+			rightRows = append(rightRows, helpRowData{
+				rightKey:  strings.Repeat(" ", keyPadding) + keyStr + ":",
+				rightDesc: item.desc,
+			})
+		}
+	}
+	
+	// Helper to wrap text to specified width
+	wrapText := func(text string, width int) []string {
+		if width <= 0 {
+			return []string{text}
+		}
+		words := strings.Fields(text)
+		if len(words) == 0 {
+			return []string{""}
+		}
+		
+		lines := make([]string, 0)
+		currentLine := words[0]
+		
+		for i := 1; i < len(words); i++ {
+			word := words[i]
+			testLine := currentLine + " " + word
+			if len(testLine) <= width {
+				currentLine = testLine
+			} else {
+				lines = append(lines, currentLine)
+				currentLine = word
+			}
+		}
+		lines = append(lines, currentLine)
+		return lines
+	}
+
+	// Calculate column widths first (needed for wrapping)
+	spacerWidth := 3
+	availableWidth := m.width - spacerWidth
+	leftKeyWidth := maxLeftKeyWidth + 2 // key + ":"
+	rightKeyWidth := maxRightKeyWidth + 2
+	leftDescWidth := (availableWidth - leftKeyWidth - rightKeyWidth) / 2
+	rightDescWidth := availableWidth - leftKeyWidth - leftDescWidth - spacerWidth - rightKeyWidth
+	
+	if leftDescWidth < 15 {
+		leftDescWidth = 15
+	}
+	if rightDescWidth < 15 {
+		rightDescWidth = 15
+	}
+
+	// Wrap descriptions and expand rows
+	expandedLeftRows := make([]helpRowData, 0)
+	expandedRightRows := make([]helpRowData, 0)
+	
+	// Expand left rows with wrapped descriptions
+	for _, row := range leftRows {
+		if row.leftDesc == "" {
+			// No description, just add the row
+			expandedLeftRows = append(expandedLeftRows, row)
+		} else {
+			// Wrap description
+			wrapped := wrapText(row.leftDesc, leftDescWidth)
+			for i, line := range wrapped {
+				newRow := helpRowData{
+					leftKey:  row.leftKey,
+					leftDesc: line,
+				}
+				// Only show key on first line
+				if i > 0 {
+					newRow.leftKey = ""
+				}
+				expandedLeftRows = append(expandedLeftRows, newRow)
+			}
+		}
+	}
+	
+	// Expand right rows with wrapped descriptions
+	for _, row := range rightRows {
+		if row.rightDesc == "" {
+			// No description, just add the row
+			expandedRightRows = append(expandedRightRows, row)
+		} else {
+			// Wrap description
+			wrapped := wrapText(row.rightDesc, rightDescWidth)
+			for i, line := range wrapped {
+				newRow := helpRowData{
+					rightKey:  row.rightKey,
+					rightDesc: line,
+				}
+				// Only show key on first line
+				if i > 0 {
+					newRow.rightKey = ""
+				}
+				expandedRightRows = append(expandedRightRows, newRow)
+			}
+		}
+	}
+	
+	// Pair expanded rows: take max of both lengths and pair them
+	maxRows := len(expandedLeftRows)
+	if len(expandedRightRows) > maxRows {
+		maxRows = len(expandedRightRows)
+	}
+	
+	for i := 0; i < maxRows; i++ {
+		row := helpRowData{}
+		
+		// Get left row if available
+		if i < len(expandedLeftRows) {
+			row.leftKey = expandedLeftRows[i].leftKey
+			row.leftDesc = expandedLeftRows[i].leftDesc
+		}
+		
+		// Get right row if available
+		if i < len(expandedRightRows) {
+			row.rightKey = expandedRightRows[i].rightKey
+			row.rightDesc = expandedRightRows[i].rightDesc
+		}
+		
+		tableRows = append(tableRows, table.Row{
+			row.leftKey,
+			row.leftDesc,
+			"", // spacer column
+			row.rightKey,
+			row.rightDesc,
+		})
+	}
+
+	// Render rows manually with proper formatting
+	// Calculate visible rows
+	headerLines := 3 // Header + blank lines
+	footerLines := 2 // Footer message
+	maxVisibleRows := m.height - headerLines - footerLines
+	if maxVisibleRows < 5 {
+		maxVisibleRows = 5
+	}
+
+	// Apply scroll offset
+	startRow := m.helpScrollOffset
+	if startRow >= len(tableRows) {
+		startRow = len(tableRows) - 1
+	}
+	if startRow < 0 {
+		startRow = 0
+	}
+	
+	// Handle "end" key - scroll to show last rows
+	if startRow > len(tableRows)-maxVisibleRows && len(tableRows) > maxVisibleRows {
+		startRow = len(tableRows) - maxVisibleRows
+		if startRow < 0 {
+			startRow = 0
+		}
+		m.helpScrollOffset = startRow
+	}
+
+	endRow := startRow + maxVisibleRows
+	if endRow > len(tableRows) {
+		endRow = len(tableRows)
+	}
+
+	// Helper to strip ANSI codes for width calculation
+	stripANSI := func(text string) string {
+		ansiRegex := regexp.MustCompile(`\033\[[0-9;]*m`)
+		return ansiRegex.ReplaceAllString(text, "")
+	}
+	
+	// Helper to pad string to width (accounting for ANSI codes)
+	padToWidth := func(text string, width int) string {
+		plainLen := len(stripANSI(text))
+		if plainLen >= width {
+			return text
+		}
+		return text + strings.Repeat(" ", width-plainLen)
+	}
+
+	// Render visible rows
+	for i := startRow; i < endRow; i++ {
+		row := tableRows[i]
+		// Format: leftKey | leftDesc | spacer | rightKey | rightDesc
+		leftKey := row[0]
+		leftDesc := row[1]
+		spacer := row[2]
+		rightKey := row[3]
+		rightDesc := row[4]
+		
+		// Pad each column to its width (accounting for ANSI codes)
+		b.WriteString(padToWidth(leftKey, leftKeyWidth))
+		b.WriteString(padToWidth(leftDesc, leftDescWidth))
+		b.WriteString(padToWidth(spacer, spacerWidth))
+		b.WriteString(padToWidth(rightKey, rightKeyWidth))
+		b.WriteString(padToWidth(rightDesc, rightDescWidth))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	if len(tableRows) > maxVisibleRows {
+		b.WriteString(fmt.Sprintf("Rows %d-%d of %d | ", startRow+1, endRow, len(tableRows)))
+	}
+	b.WriteString("Press ↑↓/JK/Space/B to scroll, ?/H/Esc to close\n")
 
 	return b.String()
 }
@@ -629,8 +971,16 @@ func (m *model) viewDetail() string {
 		}
 	}
 
+	// Format group and topic names for display (handle anonymization if needed)
+	displayGroup := m.detailGroup
+	displayTopicHeader := m.detailTopic
+	if m.params.Anonymize {
+		displayGroup = fmt.Sprintf("group %06d", hashString(m.detailGroup)%1000000)
+		displayTopicHeader = fmt.Sprintf("topic %06d", hashString(m.detailTopic)%1000000)
+	}
+
 	// Render header (always visible) - start at top of screen
-	b.WriteString(headerStyle.Render(fmt.Sprintf("Partition Details: %s / %s", m.detailGroup, m.detailTopic)))
+	b.WriteString(renderHeader(fmt.Sprintf("Partition Details: %s / %s", displayGroup, displayTopicHeader)))
 	b.WriteString("\n\n")
 
 	// Display topic-level metadata and configs in a two-column layout
@@ -1231,6 +1581,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "?", "h":
 		m.showHelp = true
+		m.helpScrollOffset = 0 // Reset scroll when opening help
 		return m, nil
 
 	case "enter", "d":
@@ -1548,6 +1899,41 @@ func (m *model) handleHelpKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "?", "h", "q", "esc":
 		m.showHelp = false
+		m.helpScrollOffset = 0 // Reset scroll when closing
+		return m, nil
+	case "j", "down":
+		m.helpScrollOffset++
+		return m, nil
+	case "k", "up":
+		if m.helpScrollOffset > 0 {
+			m.helpScrollOffset--
+		}
+		return m, nil
+	case " ", "pgdown":
+		// Page down in help view
+		maxRows := m.height - 5 // Reserve space for header and footer
+		if maxRows < 5 {
+			maxRows = 5
+		}
+		m.helpScrollOffset += maxRows
+		return m, nil
+	case "b", "pgup":
+		// Page up in help view
+		maxRows := m.height - 5
+		if maxRows < 5 {
+			maxRows = 5
+		}
+		m.helpScrollOffset -= maxRows
+		if m.helpScrollOffset < 0 {
+			m.helpScrollOffset = 0
+		}
+		return m, nil
+	case "home":
+		m.helpScrollOffset = 0
+		return m, nil
+	case "end":
+		// Will be clamped in viewHelp
+		m.helpScrollOffset = 999999
 		return m, nil
 	}
 	return m, nil

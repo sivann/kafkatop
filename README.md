@@ -7,25 +7,31 @@
 ![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop0.png)
 *Anonymized topics and groups*
 
-## 🚀 Status: Go Rewrite in Progress!
+## 🚀 Status: Go Version is Now Primary!
 
-We're actively rewriting kafkatop in Go for better performance and easier deployment. Both versions are available:
+The Go rewrite is complete and is now the **primary version**. Both versions are available:
 
-- **Go version** (🆕 recommended): Static binary, instant startup, works on older systems (CentOS 7+)
-- **Python version** (stable): Original implementation, feature-complete
+- **Go version** (✅ **recommended**): Static binary, instant startup, works on older systems (CentOS 7+), feature-complete
+- **Python version** (legacy): Original implementation, maintained for compatibility
 
 ## Features
 
 -   **Real-time Monitoring:** Keep an eye on event consumption and production rates across your Kafka broker.
 -   **Consumer Lag & ETA:** Instantly see the lag for each consumer group and topic, with an estimated time to catch up.
+-   **Interactive TUI:** Rich terminal UI with keyboard shortcuts for sorting, filtering, and navigation (press `?` for help).
+-   **Partition Details View:** Drill down into partition-level details including offsets, lag, rates, replicas, ISR, and leaders.
+-   **Partition Health Metrics:** 
+    - **PAR (Peak-to-Average Ratio):** Identifies hotspots - how much harder the busiest partition works vs. average
+    - **Cv (Coefficient of Variation):** Measures overall topic skew - how uniformly load is distributed
 -   **Flexible Filtering:** Easily filter by topic or consumer group name, and focus on problematic groups with a dedicated flag.
 -   **JSON Output:** Export the current status as a JSON object, for integrating with batch-collecting monitoring and alerting systems.
 -   **Anonymization Mode:** Anonymize topic and group names when sharing your screen or logs.
 -   **Metadata Reporting:** Export an overview of consumer and topic metadata (topics, partitions, ISR, leaders) in JSON.
+-   **Performance Optimized:** Parallel API calls, configurable concurrency, and detailed timing/profiling options.
 
 # Installing
 
-## Go Version (New - Recommended)
+## Go Version (Recommended)
 
 Download the static binary from the [releases](https://github.com/sivann/kafkatop/releases) page. No dependencies required!
 
@@ -40,10 +46,20 @@ Or build from source:
 
 ```bash
 git clone https://github.com/sivann/kafkatop.git
-cd kafkatop
+cd kafkatop/go
+
+# Build for your current platform
+go build -o kafkatop .
+
+# Or use the Makefile from repository root
+cd ..
 make go-build
+
+# Run it
 ./kafkatop --kafka-broker localhost:9092
 ```
+
+**Requirements:** Go 1.21+ (only needed for building from source)
 
 ## Python Version (Legacy)
 
@@ -83,13 +99,13 @@ kafkatop
 
 **Monitor a specific consumer group:**
 
-```
- kafkatop --kafka-broker 10.227.1.110  --group-filter-pattern '.*group_name.*'
+```bash
+kafkatop --kafka-broker 10.227.1.110 --group-filter-pattern '.*group_name.*'
 ```
 
-**Monitor kafka running in kubernetes, from the kubernetes node**
+**Monitor Kafka running in Kubernetes, from the Kubernetes node:**
 
-```
+```bash
 # Port-forward the pod's port locally in another terminal, or in the background:
 timeout 1200 kubectl port-forward kafka-0 9092:9092 &
 
@@ -97,38 +113,106 @@ timeout 1200 kubectl port-forward kafka-0 9092:9092 &
 kafkatop
 ```
 
+**View partition details:**
+
+In the interactive TUI, navigate to a row and press `Enter` or `D` to view detailed partition information including:
+- Per-partition lag, offsets, and consumption rates
+- Replica IDs, ISR (In-Sync Replicas), and Leader information
+- Topic configuration (retention, segment size, etc.)
+- Topic metadata (Replication Factor, Topic ID)
+
+**Export data for monitoring systems:**
+
+```bash
+# JSON summary with all metrics
+kafkatop --summary-json > kafka-status.json
+
+# Health status check
+kafkatop --status
+
+# Topic metadata only (fast, no lag calculation)
+kafkatop --topicinfo-parts
+```
+
 
 # Usage
-```
-usage: kafkatop.py [-h] [--kafka-broker KAFKA_BROKER] [--text] [--poll-period KAFKA_POLL_PERIOD] [--poll-iterations KAFKA_POLL_ITERATIONS] [--group-exclude-pattern KAFKA_GROUP_EXCLUDE_PATTERN]
-                   [--group-filter-pattern KAFKA_GROUP_FILTER_PATTERN] [--status] [--summary] [--summary-json] [--topicinfo] [--topicinfo-parts] [--only-issues] [--anonymize] [--all]
-                   [--version]
 
-Kafka consumer statistics
+## Command Line Options
 
-options:
-  -h, --help            show this help message and exit
-  --kafka-broker KAFKA_BROKER
-                        Broker IP (default: localhost)
-  --text                Only plain text, no rich output. (default: False)
-  --poll-period KAFKA_POLL_PERIOD
-                        Kafka offset poll period (seconds) for evts/sec calculation (default: 5)
-  --poll-iterations KAFKA_POLL_ITERATIONS
-                        How many times to query and display stats. -1 = Inf (default: 15)
-  --group-exclude-pattern KAFKA_GROUP_EXCLUDE_PATTERN
-                        If group matches regex, exclude (default: None)
-  --group-filter-pattern KAFKA_GROUP_FILTER_PATTERN
-                        Include *only* the groups which match regex (default: None)
-  --status              Report health status in json and exit. (default: False)
-  --summary             Display consumer groups, states, topics, partitions, and lags summary. (default: False)
-  --summary-json        Display consumer groups, states, topics, partitions, and lags summary, in json. (default: False)
-  --topicinfo           Only show informational data about the cluster, topics, partitions, no stats (fast). (default: False)
-  --topicinfo-parts     Same as --info but also show data about partitions, isr, leaders. (default: False)
-  --only-issues         Only show rows with issues. (default: False)
-  --anonymize           Anonymize topics and groups. (default: False)
-  --all                 Show groups with no members. (default: False)
-  --version             show program's version number and exit
 ```
+Usage: kafkatop [options]
+
+Options:
+  --kafka-broker string
+        Broker address (host:port) (default: "localhost:9092")
+  --text
+        Disable rich text and color
+  --poll-period int
+        Poll interval (sec) for rate calculations (default: 5)
+  --poll-iterations int
+        Refresh count before exiting (-1 for infinite) (default: 15)
+  --group-exclude-pattern string
+        Exclude groups matching regex
+  --group-filter-pattern string
+        Filter groups by regex
+  --status
+        Report health status in JSON and exit
+  --summary
+        Display consumer groups, states, topics, partitions, and lags summary
+  --summary-json
+        Display consumer groups, states, topics, partitions, and lags summary in JSON and exit
+  --topicinfo
+        Show topic metadata only (fast)
+  --topicinfo-parts
+        Show topic and partition metadata
+  --only-issues
+        Show only groups with high lag/issues
+  --anonymize
+        Anonymize topic and group names
+  --all
+        Show all groups (including those with no members)
+  --eta-method string
+        ETA calculation method: 'simple' (consumption rate only) or 'net-rate' (accounts for incoming rate) (default: "net-rate")
+  --max-concurrent int
+        Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel) (default: 10)
+  --timing
+        Show timing/profiling information for lag calculation and exit
+  --version
+        Show version and exit
+```
+
+## Interactive TUI Controls
+
+When running in interactive mode (default), use these keyboard shortcuts:
+
+### Navigation
+- `↑`/`↓` or `J`/`K`: Move up/down
+- `Space`/`B`: Page down/up
+- `Home`/`End`: Jump to top/bottom
+- `/`: Search for group/topic names
+- `n`/`N`: Next/previous search match
+
+### Actions
+- `Enter` or `D`: View partition details for selected row
+- `F`: Filter by consumer group (regex)
+- `X`: Filter by topic name (regex)
+- `P`: Pause/resume updates
+- `+`/`-`: Increase/decrease refresh rate
+- `E`: Toggle between human-readable and plain numbers
+- `?`: Show help screen
+
+### Sorting
+- `G`: Sort by Group
+- `T`/`o`: Sort by Topic
+- `P`: Sort by Partitions
+- `T`: Sort by Time Left (ETA)
+- `L`: Sort by Lag
+- `N`: Sort by New topic rate
+- `C`: Sort by Consumed rate
+- `A`: Sort by PAR (Peak-to-Average Ratio)
+- `V`: Sort by Cv (Coefficient of Variation)
+
+Press the same key again to reverse sort order.
 
 # Row Highlighting Rules
 
@@ -269,27 +353,39 @@ $C_v$ and PAR are complementary:
 
 
 ## JSON output
-A machine-parseable json can be produced as well:
+A machine-parseable JSON can be produced as well:
 
-```
-kafkatop --kafka-broker 1.2.3.4  --group-filter-pattern 'GroupName1' --summary-json
+```bash
+kafkatop --kafka-broker 1.2.3.4 --group-filter-pattern 'GroupName1' --summary-json
 ```
 
-results in:
+Results in:
 
-```
+```json
 {
   "ConsumerGroupName1": {
-    "TopicName": {
-      "partitions": 1672,
-      "state": "ConsumerGroupState.STABLE",
-      "lag_max": 86169242,
-      "lag_min": 0
+    "topics": {
+      "TopicName": {
+        "partitions": 1672,
+        "lag_max": 86169242,
+        "lag_min": 0,
+        "par": 2.45,
+        "cv": 0.78,
+        "configs": {
+          "retention.ms": "604800000",
+          "segment.bytes": "1073741824",
+          ...
+        }
+      }
     }
-  },
-[...]
+  }
 }
 ```
+
+The JSON output includes:
+- Partition counts, lag statistics (min, max)
+- Health metrics: PAR (Peak-to-Average Ratio) and Cv (Coefficient of Variation)
+- Topic configuration values (when available)
 
 # Contributing
 
@@ -337,13 +433,20 @@ If you have multiple python versions on your environment, you can run ```make-pe
 
 ```
 kafkatop/
-├── go/                    # Go implementation (new)
-│   ├── cmd/              # CLI command structure
+├── go/                    # Go implementation (primary)
 │   ├── internal/
 │   │   ├── kafka/        # Kafka admin client & lag calculation
+│   │   │   ├── admin.go  # Admin operations (consumer groups, offsets)
+│   │   │   └── lag.go    # Lag and rate calculation logic
 │   │   ├── types/        # Data structures
-│   │   └── ui/           # Output modes (TUI, text, JSON)
-│   └── main.go
+│   │   │   └── types.go  # Params, KafkaData, LagStats, RateStats, etc.
+│   │   └── ui/           # Output modes
+│   │       ├── rich.go   # Interactive TUI (Bubble Tea)
+│   │       ├── text.go   # Plain text output
+│   │       ├── json.go   # JSON output modes
+│   │       └── summary.go # Summary output
+│   ├── main.go           # Entry point and CLI flag parsing
+│   └── go.mod            # Go module dependencies
 ├── python/               # Python implementation (legacy)
 │   ├── kafkatop.py      # Main Python script
 │   └── ...

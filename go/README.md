@@ -75,12 +75,11 @@ CGO_ENABLED=0 go build -ldflags="-s -w" -o kafkatop .
 
 ## Dependencies
 
-- `github.com/spf13/cobra` - CLI framework
 - `github.com/segmentio/kafka-go` - Kafka client (pure Go)
+- `github.com/twmb/franz-go/pkg/kadm` - Kafka admin client (for topic configs)
+- `github.com/twmb/franz-go/pkg/kgo` - Kafka client (for topic configs)
 - `github.com/charmbracelet/bubbletea` - TUI framework
-- `github.com/charmbracelet/bubbles` - TUI components (table, spinner, text input)
-- `github.com/charmbracelet/lipgloss` - TUI styling
-- `github.com/dustin/go-humanize` - Number formatting
+- `github.com/charmbracelet/bubbles` - TUI components (spinner, text input)
 
 ## Architecture
 
