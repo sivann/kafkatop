@@ -29,20 +29,26 @@ jobs:
     - name: Show go version
       run: go version
 
-    - name: Get dependencies
+    - name: make go-deps
       run: make go-deps
 
-    - name: Build
+    - name: make go-build
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
       run: make go-build
 
+    - name: Run go vet
+      run: go vet
+
+    - name: Run make go-test
+      run: make go-test
+
     - name: Rename binary for artifact
       run: |
         mv kafkatop${{ matrix.goos == 'windows' && '.exe' || '' }} kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
 
-    - name: Test build
+    - name: Test --version
       if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
       run: |
         ./kafkatop-linux-amd64 --version
@@ -64,25 +70,4 @@ jobs:
         asset_name: kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
         asset_content_type: application/octet-stream
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
 
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: '1.x'
-
-    - name: make go-deps
-      run: make go-deps
-
-    - name: Run make go-test
-      run: make go-test
-
-    - name: Run go vet
-      working-directory: ./go
-      run: go vet ./...

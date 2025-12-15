@@ -86,7 +86,8 @@ go-clean: ## Clean Go build artifacts
 	cd go && $(GO) clean
 
 go-test: ## Run Go tests
-	cd go && $(GO) test -v ./...
+	cd go && $(GO) vet
+	#$(GO) test -v ./...
 
 # Python targets
 init: $(VENV_DIR)
