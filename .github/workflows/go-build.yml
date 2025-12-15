@@ -33,7 +33,7 @@ jobs:
       run: go version
 
     - name: Get dependencies
-      run: make go-install
+      run: make go-deps
 
     - name: Build
       env:
@@ -76,12 +76,12 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
-        go-version: 'latest'
+        go-version: '1.x'
 
     - name: Get dependencies
-      run: make go-install
+      run: make go-deps
 
     - name: Run tests
       run: make go-test
