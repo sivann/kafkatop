@@ -16,13 +16,13 @@ import (
 
 // TimingStats holds timing information for profiling
 type TimingStats struct {
-	ListConsumerGroups    time.Duration
+	ListConsumerGroups     time.Duration
 	DescribeConsumerGroups time.Duration
-	ListGroupOffsets      time.Duration
-	BuildTopicsMap        time.Duration
-	ListTopicOffsets      time.Duration
-	CalculateLags         time.Duration
-	Total                 time.Duration
+	ListGroupOffsets       time.Duration
+	BuildTopicsMap         time.Duration
+	ListTopicOffsets       time.Duration
+	CalculateLags          time.Duration
+	Total                  time.Duration
 }
 
 // CalcLag calculates lag statistics for all consumer groups
@@ -103,7 +103,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 
 	// Get consumer group offsets (parallelized if configured)
 	t2 := time.Now()
-		if maxConcurrent <= 1 {
+	if maxConcurrent <= 1 {
 		// Sequential execution
 		successCount := 0
 		errorCount := 0
@@ -125,7 +125,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 			kd.GroupOffsets[groupID] = offsets
 		}
 		if params.Debug {
-			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n", 
+			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n",
 				len(groups), successCount, successCount-emptyCount, emptyCount, errorCount)
 		}
 	} else {
@@ -141,7 +141,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 			wg.Add(1)
 			go func(gid string) {
 				defer wg.Done()
-				semaphore <- struct{}{} // Acquire semaphore
+				semaphore <- struct{}{}        // Acquire semaphore
 				defer func() { <-semaphore }() // Release semaphore
 
 				// Use shared client (thread-safe)
@@ -170,7 +170,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 		}
 		wg.Wait()
 		if params.Debug {
-			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n", 
+			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch Summary: Total groups=%d, Success=%d (with offsets=%d, empty=%d), Errors=%d\n",
 				len(groups), successCount, successCount-emptyCount, emptyCount, errorCount)
 		}
 	}
@@ -243,7 +243,7 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 			wg.Add(1)
 			go func(t string, ti *types.TopicWithGroups) {
 				defer wg.Done()
-				semaphore <- struct{}{} // Acquire semaphore
+				semaphore <- struct{}{}        // Acquire semaphore
 				defer func() { <-semaphore }() // Release semaphore
 
 				// Use shared client (thread-safe)
@@ -302,20 +302,20 @@ func CalcLag(ctx context.Context, admin *AdminClient, params *types.Params) (*ty
 
 			maxLag := maxInt64(lags)
 			meanLag := meanInt64(lags)
-			
+
 			// Calculate PAR (Peak-to-Average Ratio): max lag / mean lag
 			par := 0.0
 			if meanLag > 0 {
 				par = float64(maxLag) / meanLag
 			}
-			
+
 			// Calculate Cv (Coefficient of Variation): stdev / mean
 			stdev := stdDevInt64(lags, meanLag)
 			cv := 0.0
 			if meanLag > 0 {
 				cv = stdev / meanLag
 			}
-			
+
 			stats := &types.LagStats{
 				Topic:         topic,
 				GroupID:       groupID,
@@ -558,13 +558,13 @@ func stdDevInt64(values []int64, mean float64) float64 {
 	if len(values) == 0 || mean == 0 {
 		return 0
 	}
-	
+
 	sumSquaredDiff := 0.0
 	for _, v := range values {
 		diff := float64(v) - mean
 		sumSquaredDiff += diff * diff
 	}
-	
+
 	variance := sumSquaredDiff / float64(len(values))
 	return math.Sqrt(variance)
 }

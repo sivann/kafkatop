@@ -20,17 +20,17 @@ import (
 
 // ANSI color codes
 const (
-	colorReset   = "\033[0m"
-	colorGreen   = "\033[32m"
+	colorReset       = "\033[0m"
+	colorGreen       = "\033[32m"
 	colorBrightGreen = "\033[1;32m"
-	colorYellow  = "\033[33m"
-	colorCyan    = "\033[36m"
-	colorRed     = "\033[31m"
-	colorMagenta = "\033[35m"
-	colorWhite   = "\033[37m"
+	colorYellow      = "\033[33m"
+	colorCyan        = "\033[36m"
+	colorRed         = "\033[31m"
+	colorMagenta     = "\033[35m"
+	colorWhite       = "\033[37m"
 	colorBrightWhite = "\033[1;37m"
-	colorBold    = "\033[1m"
-	colorReverse = "\033[7m"
+	colorBold        = "\033[1m"
+	colorReverse     = "\033[7m"
 )
 
 // Helper function to render header text with styling
@@ -39,53 +39,53 @@ func renderHeader(text string) string {
 }
 
 type model struct {
-	admin           *kafka.AdminClient
-	params          *types.Params
-	kd              *types.KafkaData
-	rates           map[string]map[string]*types.RateStats
-	iteration       int
-	loading         bool
-	loadingStatus   string
-	spinner         spinner.Model
-	table           table.Model
-	sortKey         string
-	sortReverse     bool
-	filterInput     textinput.Model
-	showFilter      bool
-	filterPattern   string
-	topicFilterInput textinput.Model
-	showTopicFilter bool
-	topicFilterPattern string
-	searchInput     textinput.Model
-	showSearch      bool
-	searchPattern   string
-	searchMatchIdx  int
-	searchMatches   []int
-	warnings        []string
-	showWarnings    bool
-	err             error
-	quitting        bool
-	ready           bool
-	width           int
-	height          int
-	pollPeriod      time.Duration
-	pollPeriods     []time.Duration
-	pollPeriodIdx   int
-	paused          bool
-	scrollOffset    int
-	selectedRowIdx  int
-	showDetail      bool
-	detailGroup     string
-	detailTopic     string
-	detailScrollOffset int
-	detailPartitionSortKey string // Sort partitions: "" = by partition number, "lag" = by lag, "offset" = by offset
-	detailTopicMetadata *types.TopicInfo // Cached topic metadata for detail view
-	showHelp        bool
-	helpScrollOffset int // Scroll offset for help screen
-	followMode      bool
-	showFullNumbers bool
-	lastUpdateTime  time.Time
-	startTime       time.Time // Start time for marquee animation
+	admin                  *kafka.AdminClient
+	params                 *types.Params
+	kd                     *types.KafkaData
+	rates                  map[string]map[string]*types.RateStats
+	iteration              int
+	loading                bool
+	loadingStatus          string
+	spinner                spinner.Model
+	table                  table.Model
+	sortKey                string
+	sortReverse            bool
+	filterInput            textinput.Model
+	showFilter             bool
+	filterPattern          string
+	topicFilterInput       textinput.Model
+	showTopicFilter        bool
+	topicFilterPattern     string
+	searchInput            textinput.Model
+	showSearch             bool
+	searchPattern          string
+	searchMatchIdx         int
+	searchMatches          []int
+	warnings               []string
+	showWarnings           bool
+	err                    error
+	quitting               bool
+	ready                  bool
+	width                  int
+	height                 int
+	pollPeriod             time.Duration
+	pollPeriods            []time.Duration
+	pollPeriodIdx          int
+	paused                 bool
+	scrollOffset           int
+	selectedRowIdx         int
+	showDetail             bool
+	detailGroup            string
+	detailTopic            string
+	detailScrollOffset     int
+	detailPartitionSortKey string           // Sort partitions: "" = by partition number, "lag" = by lag, "offset" = by offset
+	detailTopicMetadata    *types.TopicInfo // Cached topic metadata for detail view
+	showHelp               bool
+	helpScrollOffset       int // Scroll offset for help screen
+	followMode             bool
+	showFullNumbers        bool
+	lastUpdateTime         time.Time
+	startTime              time.Time // Start time for marquee animation
 }
 
 type tickMsg time.Time
@@ -123,7 +123,7 @@ func ShowRich(admin *kafka.AdminClient, params *types.Params) error {
 		10 * time.Second,
 		30 * time.Second,
 	}
-	
+
 	// Find initial poll period index
 	pollPeriodIdx := 0
 	initialPeriod := time.Duration(params.KafkaPollPeriod) * time.Second
@@ -148,7 +148,7 @@ func ShowRich(admin *kafka.AdminClient, params *types.Params) error {
 		pollPeriodIdx:    pollPeriodIdx,
 		lastUpdateTime:   time.Now(),
 		startTime:        time.Now(), // Start time for marquee animation
-		selectedRowIdx:   0, // Initialize to 0 so first row is selected by default
+		selectedRowIdx:   0,          // Initialize to 0 so first row is selected by default
 	}
 
 	// Don't use AltScreen so the output remains on quit
@@ -383,13 +383,13 @@ func wrapText(text string, width int) []string {
 	if width <= 0 {
 		return []string{text}
 	}
-	
+
 	var lines []string
 	words := strings.Fields(text)
 	if len(words) == 0 {
 		return []string{""}
 	}
-	
+
 	currentLine := words[0]
 	for _, word := range words[1:] {
 		// Check if adding this word would exceed width
@@ -439,7 +439,6 @@ func (m *model) viewHelp() string {
 		}
 		return result
 	}
-
 
 	// Left column data
 	leftData := []struct {
@@ -532,7 +531,7 @@ func (m *model) viewHelp() string {
 
 	// Build table rows from structured data
 	tableRows := make([]table.Row, 0)
-	
+
 	// Find max key widths for alignment
 	maxLeftKeyWidth := 0
 	maxRightKeyWidth := 0
@@ -577,7 +576,7 @@ func (m *model) viewHelp() string {
 	// Create a list of all left and right rows first, then pair them
 	leftRows := make([]helpRowData, 0)
 	rightRows := make([]helpRowData, 0)
-	
+
 	// Build all left rows
 	for _, section := range leftData {
 		// Add section header
@@ -592,7 +591,7 @@ func (m *model) viewHelp() string {
 			})
 		}
 	}
-	
+
 	// Build all right rows
 	for _, section := range rightData {
 		// Add section header
@@ -612,7 +611,7 @@ func (m *model) viewHelp() string {
 			})
 		}
 	}
-	
+
 	// Helper to wrap text to specified width
 	wrapText := func(text string, width int) []string {
 		if width <= 0 {
@@ -622,10 +621,10 @@ func (m *model) viewHelp() string {
 		if len(words) == 0 {
 			return []string{""}
 		}
-		
+
 		lines := make([]string, 0)
 		currentLine := words[0]
-		
+
 		for i := 1; i < len(words); i++ {
 			word := words[i]
 			testLine := currentLine + " " + word
@@ -647,7 +646,7 @@ func (m *model) viewHelp() string {
 	rightKeyWidth := maxRightKeyWidth + 2
 	leftDescWidth := (availableWidth - leftKeyWidth - rightKeyWidth) / 2
 	rightDescWidth := availableWidth - leftKeyWidth - leftDescWidth - spacerWidth - rightKeyWidth
-	
+
 	if leftDescWidth < 15 {
 		leftDescWidth = 15
 	}
@@ -658,7 +657,7 @@ func (m *model) viewHelp() string {
 	// Wrap descriptions and expand rows
 	expandedLeftRows := make([]helpRowData, 0)
 	expandedRightRows := make([]helpRowData, 0)
-	
+
 	// Expand left rows with wrapped descriptions
 	for _, row := range leftRows {
 		if row.leftDesc == "" {
@@ -680,7 +679,7 @@ func (m *model) viewHelp() string {
 			}
 		}
 	}
-	
+
 	// Expand right rows with wrapped descriptions
 	for _, row := range rightRows {
 		if row.rightDesc == "" {
@@ -702,28 +701,28 @@ func (m *model) viewHelp() string {
 			}
 		}
 	}
-	
+
 	// Pair expanded rows: take max of both lengths and pair them
 	maxRows := len(expandedLeftRows)
 	if len(expandedRightRows) > maxRows {
 		maxRows = len(expandedRightRows)
 	}
-	
+
 	for i := 0; i < maxRows; i++ {
 		row := helpRowData{}
-		
+
 		// Get left row if available
 		if i < len(expandedLeftRows) {
 			row.leftKey = expandedLeftRows[i].leftKey
 			row.leftDesc = expandedLeftRows[i].leftDesc
 		}
-		
+
 		// Get right row if available
 		if i < len(expandedRightRows) {
 			row.rightKey = expandedRightRows[i].rightKey
 			row.rightDesc = expandedRightRows[i].rightDesc
 		}
-		
+
 		tableRows = append(tableRows, table.Row{
 			row.leftKey,
 			row.leftDesc,
@@ -750,7 +749,7 @@ func (m *model) viewHelp() string {
 	if startRow < 0 {
 		startRow = 0
 	}
-	
+
 	// Handle "end" key - scroll to show last rows
 	if startRow > len(tableRows)-maxVisibleRows && len(tableRows) > maxVisibleRows {
 		startRow = len(tableRows) - maxVisibleRows
@@ -770,7 +769,7 @@ func (m *model) viewHelp() string {
 		ansiRegex := regexp.MustCompile(`\033\[[0-9;]*m`)
 		return ansiRegex.ReplaceAllString(text, "")
 	}
-	
+
 	// Helper to pad string to width (accounting for ANSI codes)
 	padToWidth := func(text string, width int) string {
 		plainLen := len(stripANSI(text))
@@ -789,7 +788,7 @@ func (m *model) viewHelp() string {
 		spacer := row[2]
 		rightKey := row[3]
 		rightDesc := row[4]
-		
+
 		// Pad each column to its width (accounting for ANSI codes)
 		b.WriteString(padToWidth(leftKey, leftKeyWidth))
 		b.WriteString(padToWidth(leftDesc, leftDescWidth))
@@ -853,7 +852,7 @@ func (m *model) viewDetail() string {
 	for part := range lagStats.PartitionLags {
 		partitions = append(partitions, part)
 	}
-	
+
 	switch m.detailPartitionSortKey {
 	case "lag":
 		// Sort by lag (descending - highest lag first)
@@ -936,7 +935,7 @@ func (m *model) viewDetail() string {
 
 	// Calculate space allocation - count actual newlines:
 	// Header: title (1) + "\n\n" (2) + ReplicationFactor/Configs (1) + Total Lag (1) + Min (1) + PAR (1) + Cv (1) + Consumption Rate (1) + Arrival Rate (1) + ETA (1) + "\n" (1) + table header (1) + separator (1) = 14 lines
-	// Footer: "\n" (1) + scroll info (1) + "\n" (1) + "Press Esc" (1) = 4 lines  
+	// Footer: "\n" (1) + scroll info (1) + "\n" (1) + "Press Esc" (1) = 4 lines
 	// Total reserved: 18 lines
 	headerLines := 14
 	footerLines := 4
@@ -990,14 +989,14 @@ func (m *model) viewDetail() string {
 
 	// Display topic-level metadata and configs in a two-column layout
 	// Left column: metadata, Right column: configs table
-	leftColWidth := 50 // Width for left column (metadata)
+	leftColWidth := 50                          // Width for left column (metadata)
 	rightColWidth := m.width - leftColWidth - 5 // Width for right column (configs), with spacing
-	
+
 	if rightColWidth < 30 {
 		rightColWidth = 30 // Minimum width for configs
 		leftColWidth = m.width - rightColWidth - 5
 	}
-	
+
 	// Helper function to format config value with .ms conversion to days
 	formatConfigValue := func(key, value string) string {
 		// Check if it's a .ms config and convert to days
@@ -1019,7 +1018,7 @@ func (m *model) viewDetail() string {
 		}
 		return value
 	}
-	
+
 	// Build configs table rows
 	var configRows []string
 	if m.detailTopicMetadata != nil && len(m.detailTopicMetadata.Configs) > 0 {
@@ -1029,13 +1028,13 @@ func (m *model) viewDetail() string {
 			configKeys = append(configKeys, k)
 		}
 		sort.Strings(configKeys)
-		
+
 		for _, key := range configKeys {
 			value := formatConfigValue(key, m.detailTopicMetadata.Configs[key])
 			configRows = append(configRows, fmt.Sprintf("%-25s: %s", key, value))
 		}
 	}
-	
+
 	// Display metadata and configs side by side
 	parStr := "-"
 	if lagStats.PAR > 0 {
@@ -1058,7 +1057,7 @@ func (m *model) viewDetail() string {
 		fmt.Sprintf("Arrival Rate: %s evts/sec", formatNumber(m.showFullNumbers, int64(rateStats.EventsArrivalRate))),
 		fmt.Sprintf("ETA: %s", rateStats.RemainingHMS),
 	}
-	
+
 	// Add topic metadata header
 	if m.detailTopicMetadata != nil {
 		headerParts := []string{}
@@ -1070,21 +1069,21 @@ func (m *model) viewDetail() string {
 			b.WriteString(strings.Join(headerParts, "  ") + "\n")
 		}
 	}
-	
+
 	// Display metadata and configs side by side
 	// Limit config rows to match metadata rows (5 rows) to prevent pushing table off screen
 	maxConfigRows := len(metadataLines) // Show at most as many configs as metadata lines
 	if len(configRows) > maxConfigRows {
 		configRows = configRows[:maxConfigRows]
 	}
-	
+
 	for i := 0; i < len(metadataLines); i++ {
 		leftPart := metadataLines[i]
 		rightPart := ""
 		if i < len(configRows) {
 			rightPart = configRows[i]
 		}
-		
+
 		// Format left column
 		leftFormatted := fmt.Sprintf("%-*s", leftColWidth, leftPart)
 		if rightPart != "" {
@@ -1093,7 +1092,7 @@ func (m *model) viewDetail() string {
 			b.WriteString(leftFormatted + "\n")
 		}
 	}
-	
+
 	b.WriteString("\n")
 
 	// Build header with highlighted hotkeys
@@ -1102,7 +1101,7 @@ func (m *model) viewDetail() string {
 		hotkeyLower := strings.ToLower(hotkey)
 		textLower := strings.ToLower(text)
 		hotkeyIdx := strings.Index(textLower, hotkeyLower)
-		
+
 		var coloredText string
 		if hotkeyIdx == -1 {
 			coloredText = colorBrightWhite + text + colorReset
@@ -1110,7 +1109,7 @@ func (m *model) viewDetail() string {
 			before := text[:hotkeyIdx]
 			hotkeyChar := text[hotkeyIdx : hotkeyIdx+1]
 			after := text[hotkeyIdx+1:]
-			
+
 			if m.detailPartitionSortKey == sortKey {
 				// Reverse video for sorted key
 				coloredText = colorBrightWhite + before + colorReverse + colorBrightGreen + hotkeyChar + colorReset + colorBrightWhite + after + colorReset
@@ -1119,7 +1118,7 @@ func (m *model) viewDetail() string {
 				coloredText = colorBrightWhite + before + colorBrightGreen + hotkeyChar + colorBrightWhite + after + colorReset
 			}
 		}
-		
+
 		// Format with proper width - format the colored text directly
 		// ANSI codes don't count toward width, so we need to pad based on the plain text length
 		plainLen := len(text)
@@ -1139,7 +1138,7 @@ func (m *model) viewDetail() string {
 			return coloredText
 		}
 	}
-	
+
 	// Build header with highlighted hotkeys (preserving column widths)
 	// Column widths must match data row formatting exactly:
 	// Partition: 9 chars (right-aligned in data)
@@ -1160,7 +1159,7 @@ func (m *model) viewDetail() string {
 	replicasHeader := fmt.Sprintf("%-20s", "Replica IDs")
 	isrHeader := fmt.Sprintf("%-20s", "ISR")
 	leaderHeader := fmt.Sprintf("%-8s", "Leader")
-	
+
 	headerLine := fmt.Sprintf("%s | %s | %s | %s | %s | %s | %s | %s | %s",
 		partitionHeader,
 		topicHeader,
@@ -1171,7 +1170,7 @@ func (m *model) viewDetail() string {
 		replicasHeader,
 		isrHeader,
 		leaderHeader)
-	
+
 	b.WriteString(headerLine + "\n")
 	// Separator line must match exact column widths AND spacing format (generate programmatically to ensure alignment):
 	// Format matches headerLine: "%s | %s | %s | ..." which means spaces around pipes
@@ -1192,7 +1191,7 @@ func (m *model) viewDetail() string {
 	var minRate, maxRate float64 = 0, 0
 	firstLag := true
 	firstRate := true
-	
+
 	for _, part := range partitions {
 		lag := lagStats.PartitionLags[part]
 		if firstLag {
@@ -1206,7 +1205,7 @@ func (m *model) viewDetail() string {
 				maxLag = lag
 			}
 		}
-		
+
 		rate := 0.0
 		if rateStats.PartitionRates != nil {
 			if r, exists := rateStats.PartitionRates[part]; exists {
@@ -1225,7 +1224,7 @@ func (m *model) viewDetail() string {
 			}
 		}
 	}
-	
+
 	// Helper function to get color based on value position in range (green -> yellow -> red)
 	getRankColor := func(value, minVal, maxVal float64) string {
 		if maxVal == minVal {
@@ -1250,14 +1249,14 @@ func (m *model) viewDetail() string {
 	for i := startIdx; i < endIdx; i++ {
 		part := partitions[i]
 		lag := lagStats.PartitionLags[part]
-		
+
 		groupOffset := int64(0)
 		if groupOffsets != nil {
 			if offset, exists := groupOffsets[part]; exists {
 				groupOffset = offset
 			}
 		}
-		
+
 		topicOffset := int64(0)
 		if topicOffsets != nil {
 			if offset, exists := topicOffsets[part]; exists {
@@ -1270,7 +1269,7 @@ func (m *model) viewDetail() string {
 		if len(displayTopic) > 24 {
 			displayTopic = displayTopic[:21] + "..."
 		}
-		
+
 		// Get per-partition consumption rate
 		partitionRate := 0.0
 		if rateStats.PartitionRates != nil {
@@ -1278,14 +1277,14 @@ func (m *model) viewDetail() string {
 				partitionRate = rate
 			}
 		}
-		
+
 		// Get colors based on ranking
 		lagColor := getRankColor(float64(lag), float64(minLag), float64(maxLag))
 		rateColor := getRankColor(partitionRate, minRate, maxRate)
-		
+
 		lagStr := formatNumber(m.showFullNumbers, lag)
 		rateStr := formatRate(m.showFullNumbers, partitionRate)
-		
+
 		// Get partition metadata
 		var replicasStr, isrStr, leaderStr string
 		if m.detailTopicMetadata != nil {
@@ -1298,14 +1297,14 @@ func (m *model) viewDetail() string {
 						replicaStrs[i] = fmt.Sprintf("%d", r)
 					}
 					replicasStr = fmt.Sprintf("(%s)", strings.Join(replicaStrs, ","))
-					
+
 					// Format ISR
 					isrStrs := make([]string, len(partInfo.ISRs))
 					for i, isr := range partInfo.ISRs {
 						isrStrs[i] = fmt.Sprintf("%d", isr)
 					}
 					isrStr = fmt.Sprintf("(%s)", strings.Join(isrStrs, ","))
-					
+
 					// Format leader
 					leaderStr = fmt.Sprintf("%d", partInfo.Leader)
 					break
@@ -1321,10 +1320,10 @@ func (m *model) viewDetail() string {
 		if leaderStr == "" {
 			leaderStr = "-"
 		}
-		
+
 		// Format rate with proper width (16 chars) to match header
 		rateStrFormatted := fmt.Sprintf("%-16s", rateStr)
-		
+
 		b.WriteString(fmt.Sprintf("%9d | %-24s | %12s | %12s | %s%-9s%s | %s%s%s | %-20s | %-20s | %-8s\n",
 			part,
 			displayTopic,
@@ -1350,10 +1349,10 @@ func (m *model) viewDetail() string {
 	} else {
 		sortHint = " | [L]ag/[G]roup/[T]opic/[R]ate sort"
 	}
-	
+
 	// Add color legend
 	colorLegend := fmt.Sprintf(" | %s[green=low%s, %sred=high%s]", colorGreen, colorReset, colorRed, colorReset)
-	
+
 	if len(partitions) > maxPartitionRows {
 		b.WriteString(fmt.Sprintf("\nRows %d-%d of %d partitions | Use ↑↓/JK/Space/B to scroll, Home/End to jump%s%s\n", startIdx+1, endIdx, len(partitions), sortHint, colorLegend))
 	} else {
@@ -1377,7 +1376,7 @@ func (m *model) viewMain() string {
 		// Bottom legend/header lines - split into 2 rows for narrow screens
 		timeStr := time.Now().Format("15:04:05")
 		updateTimeStr := m.lastUpdateTime.Format("15:04:05")
-		
+
 		// Helper function to format hotkey in legend
 		formatLegendHotkey := func(text string, hotkey string, sortKey string) string {
 			if m.sortKey == sortKey {
@@ -1388,7 +1387,7 @@ func (m *model) viewMain() string {
 				return strings.Replace(text, hotkey, colorBrightGreen+hotkey+colorBrightWhite, 1)
 			}
 		}
-		
+
 		// Calculate refresh countdown
 		var refreshCountdown string
 		if m.paused {
@@ -1406,7 +1405,7 @@ func (m *model) viewMain() string {
 			remainingSec := int(remaining.Seconds() + 0.5)
 			refreshCountdown = fmt.Sprintf("%ds", remainingSec)
 		}
-		
+
 		// Row 1: Status and actions
 		header1 := colorBrightWhite + fmt.Sprintf("%s poll: %d", timeStr, m.iteration)
 		if m.paused {
@@ -1422,14 +1421,14 @@ func (m *model) viewMain() string {
 		header1 += colorBrightWhite + " | " + colorBrightGreen + "P" + colorBrightWhite + " pause"
 		header1 += colorBrightWhite + " | " + colorBrightGreen + "+/-" + colorBrightWhite + " rate"
 		header1 += colorBrightWhite + " | " + colorBrightGreen + "E" + colorBrightWhite + " scale"
-		
+
 		if m.filterPattern != "" {
 			header1 += colorBrightWhite + fmt.Sprintf(" | Group: %s", m.filterPattern)
 		}
 		if m.topicFilterPattern != "" {
 			header1 += colorBrightWhite + fmt.Sprintf(" | Topic: %s", m.topicFilterPattern)
 		}
-		
+
 		// Row 2: Sorting and navigation - aligned vertically
 		header2 := colorBrightWhite + "sort-by: "
 		header2 += colorBrightWhite + formatLegendHotkey("[G]roup", "G", "group") + "  "
@@ -1450,7 +1449,7 @@ func (m *model) viewMain() string {
 			}
 			header2 += colorBrightWhite + fmt.Sprintf(" | Sorted: %s %s", m.sortKey, direction)
 		}
-		
+
 		// Count totals (will be shown in status bar)
 		rows := m.buildRowData()
 		totalGroups := make(map[string]bool)
@@ -1598,9 +1597,9 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showDetail = true
 			m.detailGroup = row.sortGroup
 			m.detailTopic = row.sortTopic
-			m.detailScrollOffset = 0 // Reset scroll to show header
+			m.detailScrollOffset = 0      // Reset scroll to show header
 			m.detailPartitionSortKey = "" // Reset sort to default
-			m.detailTopicMetadata = nil // Clear cached metadata (will be fetched in viewDetail)
+			m.detailTopicMetadata = nil   // Clear cached metadata (will be fetched in viewDetail)
 		}
 		return m, nil
 
@@ -1946,7 +1945,7 @@ func (m *model) handleHelpKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) handleDetailKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-		case "esc", "q":
+	case "esc", "q":
 		m.showDetail = false
 		m.detailGroup = ""
 		m.detailTopic = ""
@@ -2095,25 +2094,25 @@ func (m *model) updateTable() {
 }
 
 type rowData struct {
-	group            string
-	topic            string
-	parts            int
-	since            float64
-	consumed         int64
-	newRate          int64
-	consRate         int64
-	eta              string
-	lag              int64
-	par              float64 // Peak-to-Average Ratio
-	cv               float64 // Coefficient of Variation
-	hasIssues        bool
-	etaColor         string
-	rateColor        string
-	lagColor         string
-	sortGroup        string
-	sortTopic        string
-	remainingSec     int64
-	consumptionRate  float64
+	group           string
+	topic           string
+	parts           int
+	since           float64
+	consumed        int64
+	newRate         int64
+	consRate        int64
+	eta             string
+	lag             int64
+	par             float64 // Peak-to-Average Ratio
+	cv              float64 // Coefficient of Variation
+	hasIssues       bool
+	etaColor        string
+	rateColor       string
+	lagColor        string
+	sortGroup       string
+	sortTopic       string
+	remainingSec    int64
+	consumptionRate float64
 }
 
 func (m *model) renderTable() string {
@@ -2138,22 +2137,22 @@ func (m *model) renderTable() string {
 	// Total fixed width: indicator + parts + since + consumed + newRate + consRate + eta + lag + par + cv + spacing
 	// Spaces: indicator-group, group-topic, topic-parts, parts-since, since-consumed, consumed-newRate, newRate-consRate, consRate-eta, eta-lag, lag-par, par-cv = 11 spaces
 	fixedWidth := indicatorWidth + partsWidth + sinceWidth + consumedWidth + newRateWidth + consRateWidth + etaWidth + lagWidth + parWidth + cvWidth + 11 // spaces between columns
-	availableWidth := m.width - fixedWidth - 2 // margin
-	
+	availableWidth := m.width - fixedWidth - 2                                                                                                            // margin
+
 	// Adaptive group/topic widths with minimums
 	minGroupWidth := 10
 	minTopicWidth := 10
 	maxGroupWidth := 45
 	maxTopicWidth := 30
-	
-	if availableWidth < minGroupWidth + minTopicWidth + 1 {
+
+	if availableWidth < minGroupWidth+minTopicWidth+1 {
 		availableWidth = minGroupWidth + minTopicWidth + 1 // Ensure minimum space
 	}
-	
+
 	// Default widths
 	groupWidth := maxGroupWidth
 	topicWidth := maxTopicWidth
-	
+
 	// If terminal is narrow, shrink columns proportionally
 	if availableWidth < (maxGroupWidth + maxTopicWidth) {
 		// Shrink proportionally, but maintain minimums
@@ -2165,10 +2164,10 @@ func (m *model) renderTable() string {
 			topicWidth = minTopicWidth
 		} else {
 			// Shrink proportionally
-			ratio := float64(availableWidth) / float64(maxGroupWidth + maxTopicWidth)
+			ratio := float64(availableWidth) / float64(maxGroupWidth+maxTopicWidth)
 			groupWidth = int(float64(maxGroupWidth) * ratio)
 			topicWidth = int(float64(maxTopicWidth) * ratio)
-			
+
 			// Ensure minimums
 			if groupWidth < minGroupWidth {
 				groupWidth = minGroupWidth
@@ -2176,9 +2175,9 @@ func (m *model) renderTable() string {
 			if topicWidth < minTopicWidth {
 				topicWidth = minTopicWidth
 			}
-			
+
 			// Adjust if total exceeds available width
-			if groupWidth + topicWidth + 1 > availableWidth {
+			if groupWidth+topicWidth+1 > availableWidth {
 				// Prioritize group width, shrink topic if needed
 				if groupWidth > minGroupWidth {
 					groupWidth = availableWidth - topicWidth - 1
@@ -2218,10 +2217,10 @@ func (m *model) renderTable() string {
 		} else {
 			formatted = fmt.Sprintf("%*s", width, text)
 		}
-		
+
 		// Now find the text in the formatted string and replace with colored version
 		hotkeyIdx := strings.Index(strings.ToLower(text), strings.ToLower(hotkey))
-		
+
 		var coloredText string
 		if hotkeyIdx == -1 {
 			coloredText = brightWhite + text + reset
@@ -2229,7 +2228,7 @@ func (m *model) renderTable() string {
 			before := text[:hotkeyIdx]
 			hotkeyChar := text[hotkeyIdx : hotkeyIdx+1]
 			after := text[hotkeyIdx+1:]
-			
+
 			if m.sortKey == sortKey {
 				// Reverse video for sorted column hotkey
 				coloredText = brightWhite + before + reverse + green + hotkeyChar + reset + brightWhite + after + reset
@@ -2238,7 +2237,7 @@ func (m *model) renderTable() string {
 				coloredText = brightWhite + before + green + hotkeyChar + brightWhite + after + reset
 			}
 		}
-		
+
 		// Replace the plain text with colored version in the formatted string
 		return strings.Replace(formatted, text, coloredText, 1)
 	}
@@ -2252,7 +2251,7 @@ func (m *model) renderTable() string {
 	} else {
 		consumedRateTopCol = strings.Replace(consumedRateTopPlain, "Consumed", brightWhite+green+"C"+brightWhite+"onsumed"+reset, 1)
 	}
-	
+
 	newRateTopPlain := fmt.Sprintf("%*s", newRateWidth, "New topic")
 	var newRateTopCol string
 	if m.sortKey == "newrate" {
@@ -2260,7 +2259,7 @@ func (m *model) renderTable() string {
 	} else {
 		newRateTopCol = strings.Replace(newRateTopPlain, "New topic", brightWhite+green+"N"+brightWhite+"ew topic"+reset, 1)
 	}
-	
+
 	row1 := fmt.Sprintf("%-*s %-*s %-*s %*s %*s %*s %s %s %*s %*s %*s %*s",
 		indicatorWidth, "",
 		groupWidth, "",
@@ -2277,7 +2276,7 @@ func (m *model) renderTable() string {
 
 	// Row 2 - build each column separately
 	groupCol := formatHeaderCol("Group", "G", "group", groupWidth, true)
-	
+
 	// Topic header - special handling since hotkey is "o" not "T"
 	var topicCol string
 	topicPlain := fmt.Sprintf("%-*s", topicWidth, "Topic")
@@ -2286,7 +2285,7 @@ func (m *model) renderTable() string {
 	} else {
 		topicCol = strings.Replace(topicPlain, "Topic", brightWhite+"T"+green+"o"+brightWhite+"pic"+reset, 1)
 	}
-	
+
 	partsCol := formatHeaderCol("Partitions", "P", "partitions", partsWidth, true)
 	sincePlain := fmt.Sprintf("%*s", sinceWidth, "(sec)")
 	sinceCol := strings.Replace(sincePlain, "(sec)", brightWhite+"(sec)"+reset, 1)
@@ -2379,37 +2378,37 @@ func (m *model) renderTable() string {
 		if len(partsStr) > partsWidth {
 			partsStr = partsStr[:partsWidth]
 		}
-		
+
 		sinceStr := fmt.Sprintf("%.1fs", row.since)
 		if len(sinceStr) > sinceWidth {
 			sinceStr = sinceStr[:sinceWidth]
 		}
-		
+
 		consumedStr := formatNumber(m.showFullNumbers, row.consumed)
 		if len(consumedStr) > consumedWidth {
 			consumedStr = consumedStr[:consumedWidth]
 		}
-		
+
 		newRateStr := formatNumber(m.showFullNumbers, row.newRate)
 		if len(newRateStr) > newRateWidth {
 			newRateStr = newRateStr[:newRateWidth]
 		}
-		
+
 		consRateStr := formatNumber(m.showFullNumbers, row.consRate)
 		if len(consRateStr) > consRateWidth {
 			consRateStr = consRateStr[:consRateWidth]
 		}
-		
+
 		etaStr := row.eta
 		if len(etaStr) > etaWidth {
 			etaStr = etaStr[:etaWidth]
 		}
-		
+
 		lagStr := formatNumber(m.showFullNumbers, row.lag)
 		if len(lagStr) > lagWidth {
 			lagStr = lagStr[:lagWidth]
 		}
-		
+
 		// Format PAR (Peak-to-Average Ratio)
 		parStr := "-"
 		if row.par > 0 {
@@ -2418,7 +2417,7 @@ func (m *model) renderTable() string {
 		if len(parStr) > parWidth {
 			parStr = parStr[:parWidth]
 		}
-		
+
 		// Format Cv (Coefficient of Variation)
 		cvStr := "-"
 		if row.cv > 0 {
@@ -2427,7 +2426,7 @@ func (m *model) renderTable() string {
 		if len(cvStr) > cvWidth {
 			cvStr = cvStr[:cvWidth]
 		}
-		
+
 		// Check if this row matches search (highlight if search pattern exists, even if dialog is closed)
 		isSearchMatch := false
 		if m.searchPattern != "" && len(m.searchMatches) > 0 {
@@ -2444,7 +2443,7 @@ func (m *model) renderTable() string {
 		// Get color codes
 		rateColorCode := getColorCode(row.rateColor)
 		etaColorCode := getColorCode(row.etaColor)
-		
+
 		// Get Cv color based on thresholds: green (closer to 0), yellow (0.5-1), red (>1)
 		cvColorCode := colorReset
 		if row.cv > 0 {
@@ -2484,7 +2483,7 @@ func (m *model) renderTable() string {
 			// Pad with spaces
 			groupPadded = group + strings.Repeat(" ", groupWidth-len(group))
 		}
-		
+
 		topicPadded := topic
 		if len(topic) > topicWidth {
 			topicPadded = topic[:topicWidth]
@@ -2522,12 +2521,12 @@ func (m *model) renderTable() string {
 		if len(lagStrPadded) < lagWidth {
 			lagStrPadded = strings.Repeat(" ", lagWidth-len(lagStrPadded)) + lagStrPadded
 		}
-		
+
 		parStrPadded := parStr
 		if len(parStrPadded) < parWidth {
 			parStrPadded = strings.Repeat(" ", parWidth-len(parStrPadded)) + parStrPadded
 		}
-		
+
 		cvStrPadded := cvStr
 		if len(cvStrPadded) < cvWidth {
 			cvStrPadded = strings.Repeat(" ", cvWidth-len(cvStrPadded)) + cvStrPadded
@@ -2553,7 +2552,7 @@ func (m *model) renderTable() string {
 				// Pad with spaces
 				groupPadded = group + strings.Repeat(" ", groupWidth-len(group))
 			}
-			
+
 			topicPadded := topic
 			if len(topic) > topicWidth {
 				topicPadded = topic[:topicWidth]
@@ -2561,7 +2560,7 @@ func (m *model) renderTable() string {
 				// Pad with spaces
 				topicPadded = topic + strings.Repeat(" ", topicWidth-len(topic))
 			}
-			
+
 			// Build row with colors (no format specifiers to avoid BADWIDTH errors)
 			rowLine := indicatorColor + indicatorStr + reset + " " +
 				cyan + groupPadded + reset + " " +
@@ -2798,7 +2797,7 @@ func formatRate(showFull bool, rate float64) string {
 	if rate == 0 {
 		return "0"
 	}
-	
+
 	if showFull {
 		// Plain number format - no units
 		if rate == float64(int64(rate)) {
@@ -2806,7 +2805,7 @@ func formatRate(showFull bool, rate float64) string {
 		}
 		return fmt.Sprintf("%.1f", rate)
 	}
-	
+
 	// Human-readable format with units
 	// Format as integer if whole number, otherwise with 1 decimal place
 	if rate < 1000 {
@@ -2998,7 +2997,7 @@ func (m *model) marqueeText(text string, width int, rowIndex int) string {
 	if width <= 0 {
 		return ""
 	}
-	
+
 	if len(text) <= width {
 		// Text fits, pad to exact width with spaces
 		if len(text) < width {
@@ -3010,15 +3009,15 @@ func (m *model) marqueeText(text string, width int, rowIndex int) string {
 	// Time-based marquee: scroll left to right smoothly
 	// All rows start scrolling at the same time (synchronized)
 	elapsed := time.Since(m.startTime)
-	
+
 	// Scroll speed: 4 characters per 300ms animation tick
 	scrollSpeed := time.Millisecond * 300
 	charsPerTick := 4 // Characters to scroll per animation tick
-	
+
 	// All rows start at the same time (no baseOffset for synchronization)
 	// Calculate scroll position in characters (4 chars per tick)
-	charsScrolled := int(elapsed / scrollSpeed) * charsPerTick
-	
+	charsScrolled := int(elapsed/scrollSpeed) * charsPerTick
+
 	// Scrollable range: from 0 to len(text) - width (so we can show full width)
 	maxScrollPos := len(text) - width
 	if maxScrollPos < 0 {
@@ -3029,24 +3028,24 @@ func (m *model) marqueeText(text string, width int, rowIndex int) string {
 		}
 		return result[:width]
 	}
-	
+
 	// Add a pause at the end (show beginning for a bit before restarting)
 	// Pause duration: show beginning for 2 seconds before restarting
 	// Calculate pause in terms of scroll ticks
 	pauseTicks := int((2 * time.Second) / scrollSpeed) // 2 seconds worth of ticks
 	pauseChars := pauseTicks * charsPerTick
 	totalScrollable := maxScrollPos + 1 + pauseChars
-	
+
 	// Calculate scroll position with wrap-around
 	scrollPos := charsScrolled % totalScrollable
-	
+
 	// If we're in the pause phase (showing beginning)
 	if scrollPos > maxScrollPos {
 		// Show beginning of text
 		result := text[:width]
 		return result
 	}
-	
+
 	// Normal scrolling - show contiguous portion of text starting from scrollPos
 	// Ensure we don't go out of bounds
 	if scrollPos < 0 {
@@ -3055,7 +3054,7 @@ func (m *model) marqueeText(text string, width int, rowIndex int) string {
 	if scrollPos > maxScrollPos {
 		scrollPos = maxScrollPos
 	}
-	
+
 	// Extract exactly 'width' characters starting from scrollPos
 	result := text[scrollPos : scrollPos+width]
 	return result

@@ -31,7 +31,7 @@ ccso = $(shell tput smso)
 
 .PHONY: all init venv_update clean pex pex-mp build publish go go-install go-clean go-build-all
 
-all: go ## Build both Python and Go versions
+all: go 
 
 # Go targets
 go: go-build ## Build Go version (default)

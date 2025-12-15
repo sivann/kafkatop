@@ -12,21 +12,21 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/sivann/kafkatop/internal/types"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/sivann/kafkatop/internal/types"
 )
 
 // AdminClient wraps Kafka admin operations
 type AdminClient struct {
-	broker              string
-	conn                *kafka.Conn
-	client              *kafka.Client // Shared client for API calls
-	clientPool          chan *kafka.Client // Pool of clients for parallel operations
-	franzClient         *kgo.Client   // franz-go client for DescribeConfigs API
-	franzAdmin          *kadm.Client  // franz-go admin client
-	useInitialBrokerOnly bool          // If true, force all operations to use initial broker
-	debug                bool          // Enable debug output
+	broker               string
+	conn                 *kafka.Conn
+	client               *kafka.Client      // Shared client for API calls
+	clientPool           chan *kafka.Client // Pool of clients for parallel operations
+	franzClient          *kgo.Client        // franz-go client for DescribeConfigs API
+	franzAdmin           *kadm.Client       // franz-go admin client
+	useInitialBrokerOnly bool               // If true, force all operations to use initial broker
+	debug                bool               // Enable debug output
 }
 
 // dnsMapResolver is a custom resolver that uses DNS mappings
@@ -100,7 +100,7 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]
 			brokerHost = broker[:idx]
 			brokerPort = broker[idx+1:]
 		}
-		
+
 		// Custom dialer that always connects to the initial broker when useInitialBrokerOnly is true
 		// When DNS mapping is provided, it's handled by the Resolver instead
 		customDial := func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -110,23 +110,23 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]
 				DualStack: true,
 			}).DialContext(ctx, network, brokerHost+":"+brokerPort)
 		}
-		
+
 		// Create transport with custom dialer and resolver
 		// The Transport will still create pools per broker ID, but all connections
 		// will go to the same broker via the custom Dial function
 		// Set MetadataTTL to 0 to disable caching and always get fresh metadata
 		// Leave MetadataTopics empty to get metadata for all topics
 		customTransport := &kafka.Transport{
-			Dial:          customDial,
-			DialTimeout:   5 * time.Second,
-			IdleTimeout:   30 * time.Second,
-			MetadataTTL:   0,        // Disable metadata caching to ensure fresh data
-			MetadataTopics: nil,     // nil/empty means get metadata for all topics
+			Dial:           customDial,
+			DialTimeout:    5 * time.Second,
+			IdleTimeout:    30 * time.Second,
+			MetadataTTL:    0,   // Disable metadata caching to ensure fresh data
+			MetadataTopics: nil, // nil/empty means get metadata for all topics
 		}
 		if customResolver != nil {
 			customTransport.Resolver = customResolver
 		}
-		
+
 		sharedClient = &kafka.Client{
 			Addr:      kafka.TCP(broker),
 			Timeout:   10 * time.Second,
@@ -149,7 +149,7 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]
 		kgo.SeedBrokers(broker),
 		kgo.RequestTimeoutOverhead(10 * time.Second),
 	}
-	
+
 	// Create custom dialer for franz-go that handles DNS mapping and/or initial broker only
 	if useInitialBrokerOnly || len(dnsMap) > 0 {
 		brokerHost := broker
@@ -158,13 +158,13 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]
 			brokerHost = broker[:idx]
 			brokerPort = broker[idx+1:]
 		}
-		
+
 		franzOpts = append(franzOpts, kgo.Dialer(func(ctx context.Context, network, address string) (net.Conn, error) {
 			if useInitialBrokerOnly {
 				// Always connect to the initial broker
 				return (&net.Dialer{}).DialContext(ctx, network, brokerHost+":"+brokerPort)
 			}
-			
+
 			// Use DNS mapping if available (only when not using initial broker only)
 			if len(dnsMap) > 0 {
 				// Parse address (format: host:port)
@@ -176,11 +176,11 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]
 					}
 				}
 			}
-			
+
 			return (&net.Dialer{}).DialContext(ctx, network, address)
 		}))
 	}
-	
+
 	franzClient, err := kgo.NewClient(franzOpts...)
 	if err != nil {
 		// If franz-go client creation fails, continue without it (non-fatal)
@@ -194,12 +194,12 @@ func NewAdminClient(broker string, useInitialBrokerOnly bool, dnsMap map[string]
 	}
 
 	return &AdminClient{
-		broker:              broker,
-		conn:                conn,
-		client:              sharedClient,
-		clientPool:          nil, // No longer using a pool
-		franzClient:         franzClient,
-		franzAdmin:          franzAdmin,
+		broker:               broker,
+		conn:                 conn,
+		client:               sharedClient,
+		clientPool:           nil, // No longer using a pool
+		franzClient:          franzClient,
+		franzAdmin:           franzAdmin,
 		useInitialBrokerOnly: useInitialBrokerOnly,
 		debug:                debug,
 	}, nil
@@ -246,7 +246,7 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 	if err != nil {
 		return nil, fmt.Errorf("failed to list consumer groups: %w", err)
 	}
-	
+
 	// Debug: log how many groups we got
 	if a.debug {
 		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Got %d groups from ListGroups\n", len(response.Groups))
@@ -266,7 +266,7 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 	excludedCount := 0
 	duplicateCount := 0
 	sampleGroups := make([]string, 0, 10)
-	
+
 	for _, group := range response.Groups {
 		groupID := group.GroupID
 
@@ -296,9 +296,9 @@ func (a *AdminClient) ListConsumerGroups(ctx context.Context, params *types.Para
 			Topics:  make(map[string][]int32),
 		}
 	}
-	
+
 	if a.debug {
-		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Pattern matched %d unique groups (excluded %d, duplicates skipped %d). Sample: %v\n", 
+		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Pattern matched %d unique groups (excluded %d, duplicates skipped %d). Sample: %v\n",
 			matchedCount, excludedCount, duplicateCount, sampleGroups)
 		fmt.Fprintf(os.Stderr, "DEBUG ListConsumerGroups: Actually returning %d groups from map\n", len(groups))
 	}
@@ -318,7 +318,7 @@ func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []str
 			GroupIDs: groupIDs,
 		})
 		batchTime := time.Since(batchStart)
-		
+
 		if err == nil && len(resp.Groups) == len(groupIDs) {
 			// Batch succeeded
 			if len(groupIDs) > 0 {
@@ -328,7 +328,7 @@ func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []str
 			for _, grp := range resp.Groups {
 				groupID := grp.GroupID
 				var group *types.ConsumerGroup
-				
+
 				if grp.Error != nil {
 					group = &types.ConsumerGroup{
 						GroupID: groupID,
@@ -357,7 +357,7 @@ func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []str
 							state = types.StateStable
 						}
 					}
-					
+
 					group = &types.ConsumerGroup{
 						GroupID: groupID,
 						State:   state,
@@ -449,7 +449,7 @@ func (a *AdminClient) DescribeConsumerGroups(ctx context.Context, groupIDs []str
 			wg.Add(1)
 			go func(gid string) {
 				defer wg.Done()
-				semaphore <- struct{}{} // Acquire semaphore
+				semaphore <- struct{}{}        // Acquire semaphore
 				defer func() { <-semaphore }() // Release semaphore
 
 				// Use shared client (thread-safe)
@@ -543,18 +543,18 @@ func (a *AdminClient) ListConsumerGroupOffsetsWithClient(ctx context.Context, gr
 		req.Addr = kafka.TCP(a.broker)
 	}
 	response, err := client.OffsetFetch(ctx, req)
-		if err != nil {
-			// Debug: log errors
-			if a.debug {
-				fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Failed for group %s: %v\n", groupID, err)
-			}
-			return nil, fmt.Errorf("failed to fetch offsets for group %s: %w", groupID, err)
+	if err != nil {
+		// Debug: log errors
+		if a.debug {
+			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Failed for group %s: %v\n", groupID, err)
 		}
-		
-		// Debug: check if response is empty
-		if a.debug && len(response.Topics) == 0 {
-			fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Group %s returned empty topics\n", groupID)
-		}
+		return nil, fmt.Errorf("failed to fetch offsets for group %s: %w", groupID, err)
+	}
+
+	// Debug: check if response is empty
+	if a.debug && len(response.Topics) == 0 {
+		fmt.Fprintf(os.Stderr, "DEBUG OffsetFetch: Group %s returned empty topics\n", groupID)
+	}
 
 	offsets := &types.ConsumerGroupOffset{
 		GroupID:      groupID,
@@ -612,7 +612,7 @@ func (a *AdminClient) ListTopicOffsetsWithClient(ctx context.Context, topic stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to list offsets for topic %s: %w", topic, err)
 	}
-	
+
 	// Debug: log if we got incomplete results
 	if a.useInitialBrokerOnly {
 		if topicOffsets, ok := response.Topics[topic]; ok {
@@ -660,7 +660,7 @@ func (a *AdminClient) ListTopics(ctx context.Context) (map[string]*types.TopicIn
 			fmt.Fprintf(os.Stderr, "DEBUG: Topic %s has error: %v\n", topic.Name, topic.Error)
 			continue
 		}
-		
+
 		topicName := topic.Name
 		if _, exists := topics[topicName]; !exists {
 			topics[topicName] = &types.TopicInfo{
@@ -669,14 +669,14 @@ func (a *AdminClient) ListTopics(ctx context.Context) (map[string]*types.TopicIn
 				PartInfo:   []types.PartitionInfo{},
 			}
 		}
-		
+
 		// Process partitions for this topic
 		for _, partition := range topic.Partitions {
 			if partition.Error != nil {
 				// Skip partitions with errors
 				continue
 			}
-			
+
 			topics[topicName].Partitions++
 			topics[topicName].PartInfo = append(topics[topicName].PartInfo, types.PartitionInfo{
 				ID:       int32(partition.ID),
@@ -695,8 +695,8 @@ func (a *AdminClient) GetTopicMetadata(ctx context.Context, topicName string) (*
 	// Try to get topic ID from Metadata API first
 	var topicID string
 	metadataResp, err := a.client.Metadata(ctx, &kafka.MetadataRequest{
-		Addr:    kafka.TCP(a.broker),
-		Topics:  []string{topicName},
+		Addr:   kafka.TCP(a.broker),
+		Topics: []string{topicName},
 	})
 	if err == nil && len(metadataResp.Topics) > 0 {
 		// Find the topic in the response
@@ -778,20 +778,20 @@ func (a *AdminClient) GetTopicMetadata(ctx context.Context, topicName string) (*
 // GetTopicConfigs gets topic configuration using DescribeConfigs API via franz-go
 func (a *AdminClient) GetTopicConfigs(ctx context.Context, topicName string) (map[string]string, error) {
 	configs := make(map[string]string)
-	
+
 	// Use franz-go admin client if available
 	if a.franzAdmin == nil {
 		// franz-go client not available, return empty configs
 		return configs, nil
 	}
-	
+
 	// Use franz-go's DescribeTopicConfigs API
 	describeResp, err := a.franzAdmin.DescribeTopicConfigs(ctx, topicName)
 	if err != nil {
 		// Return empty configs on error (non-fatal)
 		return configs, nil
 	}
-	
+
 	// Extract configs from response
 	for _, topicConfig := range describeResp {
 		if topicConfig.Err != nil {
@@ -806,7 +806,7 @@ func (a *AdminClient) GetTopicConfigs(ctx context.Context, topicName string) (ma
 			}
 		}
 	}
-	
+
 	return configs, nil
 }
 

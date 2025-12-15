@@ -27,19 +27,20 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: 'latest'
 
     - name: Get dependencies
-      working-directory: ./go
-      run: go mod download
+      run: make go-install
 
     - name: Build
-      working-directory: ./go
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
+      run: make go-build
+
+    - name: Rename binary for artifact
       run: |
-        CGO_ENABLED=0 go build -ldflags="-s -w" -o ../kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
+        mv kafkatop${{ matrix.goos == 'windows' && '.exe' || '' }} kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
 
     - name: Test build
       if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
@@ -74,25 +75,14 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: 'latest'
 
     - name: Get dependencies
-      working-directory: ./go
-      run: go mod download
+      run: make go-install
 
     - name: Run tests
-      working-directory: ./go
-      run: go test -v ./...
+      run: make go-test
 
     - name: Run go vet
       working-directory: ./go
       run: go vet ./...
-
-    - name: Run go fmt
-      working-directory: ./go
-      run: |
-        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
-          echo "Code is not formatted. Please run 'go fmt ./...'"
-          gofmt -s -l .
-          exit 1
-        fi

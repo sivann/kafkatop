@@ -8,20 +8,20 @@ import (
 type ConsumerGroupState string
 
 const (
-	StateUnknown      ConsumerGroupState = "UNKNOWN"
-	StatePreparingRebalance ConsumerGroupState = "PREPARING_REBALANCE"
+	StateUnknown             ConsumerGroupState = "UNKNOWN"
+	StatePreparingRebalance  ConsumerGroupState = "PREPARING_REBALANCE"
 	StateCompletingRebalance ConsumerGroupState = "COMPLETING_REBALANCE"
-	StateStable       ConsumerGroupState = "STABLE"
-	StateDead         ConsumerGroupState = "DEAD"
-	StateEmpty        ConsumerGroupState = "EMPTY"
+	StateStable              ConsumerGroupState = "STABLE"
+	StateDead                ConsumerGroupState = "DEAD"
+	StateEmpty               ConsumerGroupState = "EMPTY"
 )
 
 // ConsumerGroup represents a Kafka consumer group
 type ConsumerGroup struct {
-	GroupID      string
-	State        ConsumerGroupState
-	IsSimple     bool
-	Topics       map[string][]int32 // topic -> partitions
+	GroupID  string
+	State    ConsumerGroupState
+	IsSimple bool
+	Topics   map[string][]int32 // topic -> partitions
 }
 
 // TopicPartition represents a topic and partition
@@ -33,30 +33,30 @@ type TopicPartition struct {
 
 // ConsumerGroupOffset represents consumer group offsets
 type ConsumerGroupOffset struct {
-	GroupID        string
-	TopicOffsets   map[string]map[int32]int64 // topic -> partition -> offset
-	Timestamp      time.Time
+	GroupID      string
+	TopicOffsets map[string]map[int32]int64 // topic -> partition -> offset
+	Timestamp    time.Time
 }
 
 // TopicOffset represents topic partition offsets
 type TopicOffset struct {
-	Topic          string
+	Topic            string
 	PartitionOffsets map[int32]int64 // partition -> offset
-	Timestamp      time.Time
+	Timestamp        time.Time
 }
 
 // LagStats represents lag statistics for a consumer group on a topic
 type LagStats struct {
-	Topic        string
-	GroupID      string
+	Topic         string
+	GroupID       string
 	PartitionLags map[int32]int64 // partition -> lag
-	Min          int64
-	Max          int64
-	Mean         float64
-	Median       int64
-	Sum          int64
-	PAR          float64 // Peak-to-Average Ratio: max lag / mean lag
-	Cv           float64 // Coefficient of Variation: stdev / mean
+	Min           int64
+	Max           int64
+	Mean          float64
+	Median        int64
+	Sum           int64
+	PAR           float64 // Peak-to-Average Ratio: max lag / mean lag
+	Cv            float64 // Coefficient of Variation: stdev / mean
 }
 
 // RateStats represents consumption rate statistics
@@ -74,13 +74,13 @@ type RateStats struct {
 
 // KafkaData holds all Kafka-related data
 type KafkaData struct {
-	ConsumerGroups    map[string]*ConsumerGroup
-	GroupOffsets      map[string]*ConsumerGroupOffset
-	GroupOffsetsTS    time.Time
-	TopicsWithGroups  map[string]*TopicWithGroups
-	TopicOffsets      map[string]*TopicOffset
-	TopicOffsetsTS    time.Time
-	GroupLags         map[string]map[string]*LagStats // groupID -> topic -> stats
+	ConsumerGroups   map[string]*ConsumerGroup
+	GroupOffsets     map[string]*ConsumerGroupOffset
+	GroupOffsetsTS   time.Time
+	TopicsWithGroups map[string]*TopicWithGroups
+	TopicOffsets     map[string]*TopicOffset
+	TopicOffsetsTS   time.Time
+	GroupLags        map[string]map[string]*LagStats // groupID -> topic -> stats
 }
 
 // TopicWithGroups represents a topic and its associated consumer groups
@@ -105,34 +105,34 @@ type HealthColors struct {
 
 // Params holds configuration parameters
 type Params struct {
-	KafkaBroker             string
+	KafkaBroker              string
 	KafkaGroupExcludePattern string
 	KafkaGroupFilterPattern  string
-	KafkaPollPeriod         int
-	KafkaPollIterations     int
-	KafkaSummary            bool
-	KafkaSummaryJSON        bool
-	KafkaShowEmptyGroups    bool
-	KafkaOnlyIssues         bool
-	KafkaTopicInfo          bool
-	KafkaTopicInfoParts     bool
-	KafkaStatus             bool
-	TextMode                bool
-	Anonymize               bool
-	ETACalculationMethod    string            // "simple" (old) or "net-rate" (new, accounts for incoming rate)
-	KafkaMaxConcurrent      int               // Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel)
-	TimingOutput            interface{}       // Output for timing/profiling information (io.Writer, nil = disabled)
-	UseInitialBrokerOnly    bool              // Use only initial broker address, ignore advertised addresses (for port forwarding)
-	DNSMap                  map[string]string // Custom DNS mappings: hostname -> IP address
-	Debug                   bool              // Enable debug output
+	KafkaPollPeriod          int
+	KafkaPollIterations      int
+	KafkaSummary             bool
+	KafkaSummaryJSON         bool
+	KafkaShowEmptyGroups     bool
+	KafkaOnlyIssues          bool
+	KafkaTopicInfo           bool
+	KafkaTopicInfoParts      bool
+	KafkaStatus              bool
+	TextMode                 bool
+	Anonymize                bool
+	ETACalculationMethod     string            // "simple" (old) or "net-rate" (new, accounts for incoming rate)
+	KafkaMaxConcurrent       int               // Max concurrent API calls for lag calculation (0 or 1 = sequential, >1 = parallel)
+	TimingOutput             interface{}       // Output for timing/profiling information (io.Writer, nil = disabled)
+	UseInitialBrokerOnly     bool              // Use only initial broker address, ignore advertised addresses (for port forwarding)
+	DNSMap                   map[string]string // Custom DNS mappings: hostname -> IP address
+	Debug                    bool              // Enable debug output
 }
 
 // ClusterInfo represents Kafka cluster information
 type ClusterInfo struct {
-	Topics      map[string]*TopicInfo
-	Brokers     map[int32]*BrokerInfo
-	BrokerName  string
-	ClusterID   string
+	Topics     map[string]*TopicInfo
+	Brokers    map[int32]*BrokerInfo
+	BrokerName string
+	ClusterID  string
 }
 
 // TopicInfo represents information about a Kafka topic
