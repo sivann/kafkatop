@@ -16,9 +16,6 @@ jobs:
       matrix:
         goos: [linux, darwin, windows]
         goarch: [amd64, arm64]
-        exclude:
-          - goos: windows
-            goarch: arm64
 
     steps:
     - name: Check out code
@@ -80,10 +77,10 @@ jobs:
       with:
         go-version: '1.x'
 
-    - name: Get dependencies
+    - name: make go-deps
       run: make go-deps
 
-    - name: Run tests
+    - name: Run make go-test
       run: make go-test
 
     - name: Run go vet
