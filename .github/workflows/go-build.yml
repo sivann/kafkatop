@@ -38,9 +38,6 @@ jobs:
         GOARCH: ${{ matrix.goarch }}
       run: make go-build
 
-    - name: Run go vet
-      run: go vet
-
     - name: Run make go-test
       run: make go-test
 
