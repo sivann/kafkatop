@@ -10,6 +10,7 @@ VENV_DIR = python/venv
 PYTHON := $(shell /usr/bin/which python3)
 PIP = $(VENV_DIR)/bin/pip
 
+
 # Go settings
 GO := $(shell which go)
 GOBIN := kafkatop
@@ -26,10 +27,21 @@ ccbold = $(shell if [ -n "$$TERM" ] && command -v tput >/dev/null 2>&1; then tpu
 ccgreen = $(shell if [ -n "$$TERM" ] && command -v tput >/dev/null 2>&1; then tput setaf 2; fi)
 ccso = $(shell if [ -n "$$TERM" ] && command -v tput >/dev/null 2>&1; then tput smso; fi)
 
+
+# Define all explicit build outputs
+LINUX_TARGETS := kafkatop-linux-amd64 kafkatop-linux-arm64
+DARWIN_TARGETS := kafkatop-darwin-amd64 kafkatop-darwin-arm64
+WINDOWS_TARGETS := kafkatop-windows-amd64.exe
+
+CROSS_TARGETS := $(LINUX_TARGETS) $(DARWIN_TARGETS) $(WINDOWS_TARGETS)
+
 #Do not echo commands
 .SILENT:
 
-.PHONY: all init venv_update clean pex pex-mp build pypi-publish go go-deps go-clean go-build-all
+.PHONY: all init venv_update clean pex pex-mp build pypi-publish go go-deps go-clean go-build-all go-build-linux go-build-darwin go-build-windows 
+
+
+
 
 all: go 
 
@@ -38,43 +50,42 @@ go: go-build ## Build Go version (default)
 
 go-build: $(GOBIN) ## Build Go binary with static linking for current platform
 
+go-build-all: $(CROSS_TARGETS) ## Build all cross-compiled binaries
+
+go-build-linux: $(LINUX_TARGETS) ## Build only Linux binaries
+
+go-build-darwin: $(DARWIN_TARGETS) ## Build only macOS binaries
+
+go-build-windows: $(WINDOWS_TARGETS) ## Build only Windows binaries
+
+kafkatop-linux-amd64: GOOS = linux
+kafkatop-linux-amd64: GOARCH = amd64
+
+kafkatop-linux-arm64: GOOS = linux
+kafkatop-linux-arm64: GOARCH = arm64
+
+kafkatop-darwin-amd64: GOOS = darwin
+kafkatop-darwin-amd64: GOARCH = amd64
+
+kafkatop-darwin-arm64: GOOS = darwin
+kafkatop-darwin-arm64: GOARCH = arm64
+
+kafkatop-windows-amd64.exe: GOOS = windows
+kafkatop-windows-amd64.exe: GOARCH = amd64
+
+
+# Target for host system, and github (uses the ENV)
 $(GOBIN): $(GO_SOURCES) $(GO_MOD)
 	@echo "$(ccso)--> Building Go version for $(GOOS)/$(GOARCH) $(ccend)"
 	cd go && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags="-s -w" -o ../$(GOBIN) .
 	@echo "$(ccgreen)Go binary built: ./$(GOBIN)$(ccend)"
 
-go-build-all: go-build-linux go-build-darwin go-build-windows ## Build for all platforms (Linux, macOS, Windows)
 
-go-build-linux: kafkatop-linux-amd64 kafkatop-linux-arm64 ## Build for Linux (amd64 and arm64)
-
-kafkatop-linux-amd64: $(GO_SOURCES) $(GO_MOD)
-	@echo "$(ccso)--> Building for Linux amd64 $(ccend)"
-	cd go && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -ldflags="-s -w" -o ../kafkatop-linux-amd64 .
-	@echo "$(ccgreen)Built: kafkatop-linux-amd64$(ccend)"
-
-kafkatop-linux-arm64: $(GO_SOURCES) $(GO_MOD)
-	@echo "$(ccso)--> Building for Linux arm64 $(ccend)"
-	cd go && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -ldflags="-s -w" -o ../kafkatop-linux-arm64 .
-	@echo "$(ccgreen)Built: kafkatop-linux-arm64$(ccend)"
-
-go-build-darwin: kafkatop-darwin-amd64 kafkatop-darwin-arm64 ## Build for macOS (amd64 and arm64)
-
-kafkatop-darwin-amd64: $(GO_SOURCES) $(GO_MOD)
-	@echo "$(ccso)--> Building for macOS amd64 (Intel) $(ccend)"
-	cd go && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO) build -ldflags="-s -w" -o ../kafkatop-darwin-amd64 .
-	@echo "$(ccgreen)Built: kafkatop-darwin-amd64$(ccend)"
-
-kafkatop-darwin-arm64: $(GO_SOURCES) $(GO_MOD)
-	@echo "$(ccso)--> Building for macOS arm64 (Apple Silicon) $(ccend)"
-	cd go && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build -ldflags="-s -w" -o ../kafkatop-darwin-arm64 .
-	@echo "$(ccgreen)Built: kafkatop-darwin-arm64$(ccend)"
-
-go-build-windows: kafkatop-windows-amd64.exe ## Build for Windows (amd64)
-
-kafkatop-windows-amd64.exe: $(GO_SOURCES) $(GO_MOD)
-	@echo "$(ccso)--> Building for Windows amd64 $(ccend)"
-	cd go && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build -ldflags="-s -w" -o ../kafkatop-windows-amd64.exe .
-	@echo "$(ccgreen)Built: kafkatop-windows-amd64.exe$(ccend)"
+$(CROSS_TARGETS): $(GO_SOURCES) $(GO_MOD)
+	@echo "$(ccso)--> Building cross-compile version for $(GOOS)/$(GOARCH) ($(ccend})$@)"
+	# GOOS/GOARCH are automatically set via the Target-Specific Variables above
+	cd go && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags="-s -w" -o ../$@ .
+	@echo "$(ccgreen)Built: $@$(ccend)"
 
 go-deps: ## Install Go dependencies
 	@echo "$(ccso)--> Installing Go dependencies $(ccend)"
@@ -88,6 +99,8 @@ go-clean: ## Clean Go build artifacts
 go-test: ## Run Go tests
 	cd go && $(GO) vet
 	#$(GO) test -v ./...
+
+
 
 # Python targets
 init: $(VENV_DIR)
