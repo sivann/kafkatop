@@ -78,8 +78,7 @@ kafkatop-windows-amd64.exe: $(GO_SOURCES) $(GO_MOD)
 
 go-deps: ## Install Go dependencies
 	@echo "$(ccso)--> Installing Go dependencies $(ccend)"
-	cd go && $(GO) mod tidy
-	cd go && $(GO) mod download
+	cd go && $(GO) mod tidy && $(GO) mod download
 
 go-clean: ## Clean Go build artifacts
 	@echo "$(ccso)--> Cleaning Go build artifacts $(ccend)"
