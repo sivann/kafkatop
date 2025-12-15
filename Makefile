@@ -1,6 +1,6 @@
-# Sivann
+# Sivann 2024
 
-#https://www.gnu.org/software/make/manual/html_node/One-Shell.html
+# doc: https://www.gnu.org/software/make/manual/html_node/One-Shell.html
 
 .ONESHELL:
 SHELL:=/bin/bash
@@ -40,12 +40,11 @@ CROSS_TARGETS := $(LINUX_TARGETS) $(DARWIN_TARGETS) $(WINDOWS_TARGETS)
 
 .PHONY: all init venv_update clean pex pex-mp build pypi-publish go go-deps go-clean go-build-all go-build-linux go-build-darwin go-build-windows 
 
-
-
-
 all: go 
 
+###################
 # Go targets
+###################
 go: go-build ## Build Go version (default)
 
 go-build: $(GOBIN) ## Build Go binary with static linking for current platform
@@ -73,12 +72,17 @@ kafkatop-darwin-arm64: GOARCH = arm64
 kafkatop-windows-amd64.exe: GOOS = windows
 kafkatop-windows-amd64.exe: GOARCH = amd64
 
+ifeq ($(GOOS), windows)
+    GOBIN_EXT = .exe
+endif
 
-# Target for host system, and github (uses the ENV)
+GOBIN_FN = $(GOBIN)-$(GOOS)-$(GOARCH)$(GOBIN_EXT)
+
+# Target for host system, and github (gh provides the GOOS/GOARCH env)
 $(GOBIN): $(GO_SOURCES) $(GO_MOD)
 	@echo "$(ccso)--> Building Go version for $(GOOS)/$(GOARCH) $(ccend)"
-	cd go && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags="-s -w" -o ../$(GOBIN) .
-	@echo "$(ccgreen)Go binary built: ./$(GOBIN)$(ccend)"
+	cd go && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags="-s -w" -o ../$(GOBIN_FN) .
+	@echo "$(ccgreen)Go binary built: ./$(GOBIN_FN)$(ccend)"
 
 
 $(CROSS_TARGETS): $(GO_SOURCES) $(GO_MOD)
@@ -102,7 +106,9 @@ go-test: ## Run Go tests
 
 
 
+###################
 # Python targets
+###################
 init: $(VENV_DIR)
 	echo "$(VENV_DIR) exists, type first 'make clean' to start again if needed"
 
