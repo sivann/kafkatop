@@ -41,10 +41,11 @@ jobs:
     - name: Run make go-test
       run: make go-test
 
-    - name: Rename binary for artifact
-      run: |
-        ls -l
-        mv kafkatop${{ matrix.goos == 'windows' && '.exe' || '' }} kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
+#    - name: Rename binary for artifact
+#      run: |
+#        ls -l
+#        mv kafkatop${{ matrix.goos == 'windows' && '.exe' || '' }} kafkatop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
+#
 
     - name: Test --version
       if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
