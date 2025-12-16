@@ -62,12 +62,12 @@ echo ""
 
 
 echo "$newtag" > tag.txt
-sed_inplace "s/^VERSION.*/VERSION='$newtag'/" kafkatop.py
-sed_inplace "s/^version = .*/version = \"$newtag\"/" pyproject.toml
+#sed_inplace "s/^VERSION.*/VERSION='$newtag'/" kafkatop.py
+#sed_inplace "s/^version = .*/version = \"$newtag\"/" pyproject.toml
 git diff
 git add tag.txt
-git add kafkatop.py
-git add pyproject.toml
+#git add kafkatop.py
+#git add pyproject.toml
 read -p "Press [Enter] key commit changes:"
 git commit -m "$newtag in tag.txt, kafkatop.py, and pyproject.toml"
 git push 
