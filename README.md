@@ -7,9 +7,9 @@
 ![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-main.png)
 *Anonymized topics and groups*
 
-## About version 2.x (GO rewrite)
+## About version 2.x
 
-All version 1.x releases were python-based and distributed as a PEX binary. But as it relied on confluent's kafka which in turn depended on librdkafka it became hard to maintain it for older EOL OS (like CentOS7) where this library is no longer maintained upstream. 
+All version 1.x releases were python-based and distributed as a PEX binary. But as they relied on confluent-kafka which in turn depended on librdkafka it became hard to maintain it for older EOL OS (like CentOS7) where this library is no longer maintained upstream. 
 
 The new Go rewrite has feature-parity and several additional features; it will be the one receiving updates from now on. The binaries are static, and it utilizes franz-kafka under the hood which has no CGO dependencies, so it should be compatible with older libc systems.
 
@@ -223,9 +223,7 @@ These affect cell colors but **DO NOT** trigger row highlighting:
 
 The following metrics are used by `kafkatop` to assess how uniformly events are distributed across a Kafka topic's partitions. Non-uniformity (skew) is a critical issue that leads to performance bottlenecks, overloaded consumers, and inefficient resource usage.
 
-All calculations are based on the measured **events per second** (throughput) per partition.
-
----
+All calculations are based on the measured **events per second** per partition.
 
 ## 1. Coefficient of Variation ($C_v$)
 
@@ -248,7 +246,6 @@ The $C_v$ tells you "How large is the variation *relative* to the average load?"
 | **$0.50 - 1.00$** | **High Skew / Warning** | The spread is significant. Inefficient resource usage and potential consumer issues. |
 | **$> 1.00$** | **Critical Skew / Failure** | Severe imbalance. The typical partition load is more than 100% away from the average. **Urgent fix required.** |
 
----
 
 ## 2. Peak-to-Average Ratio (PAR) / Imbalance Ratio
 
@@ -271,7 +268,6 @@ The PAR tells you "How much harder is my single busiest consumer working compare
 | **$1.50$** | **50% Overloaded.** | A clear bottleneck. The consumer handling this partition may become lagged or unstable. |
 | **$2.00$** | **100% (2x) Overloaded.** | Severe hotspot. Indicates a critical failure in the partition key selection. **Immediate resolution is mandatory.** |
 
----
 
 ## How to Use Both Metrics
 
@@ -288,6 +284,9 @@ $C_v$ and PAR are complementary:
 # Examples
 ## Screenshots
 
+| ![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-main.png) |
+|:--:|
+| *Anonymized topics/groups* Highlighted row indicates consumption rate is much lower than arival rate of new events | 
 
 | ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-topic-details.png) |
 |:--:|
