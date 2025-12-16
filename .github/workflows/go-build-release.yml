@@ -1,0 +1,92 @@
+name: Go Build
+
+on:
+  push:
+    branches: [ master ]
+    tags:
+    - '*'
+#  pull_request:
+#    branches: [ master ]
+#  release:
+#    types: [created]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 'stable'
+
+    - name: Show go version
+      run: go version
+
+    - name: make go-deps
+      run: make go-deps
+
+    - name: make go-build-all
+      run: make go-build-all
+
+
+    - name: Smoke Test, run with --version
+      run: |
+        ./dist/kafkatop-linux-amd64 --version
+
+	- name: Compress Binaries
+        run: |
+          cd dist
+          for f in kafkatop-linux-* kafkatop-darwin-*; do
+            tar -cvzf "${f}.tar.gz" "$f"
+          done
+          zip kafkatop-windows-amd64.zip kafkatop-windows-amd64.exe
+          sha256sum *.tar.gz *.zip > checksums.txt
+          cd ..
+
+    # keep the dist folder so the next job can use it
+    - name: Upload dist/ artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: kafkatop-dist
+        #path: dist/
+	    files: |
+          dist/*.tar.gz
+          dist/*.zip
+          dist/checksums.txt
+        retention-days: 1
+
+  release:
+    name: Create GH release
+    needs: build #wait for build to finish
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout code # for 'release-notes-template.md'
+        uses: actions/checkout@v4
+
+    - name: Download dist/ artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kafkatop-dist
+          path: dist/
+
+    - name: Generate Release Notes from Template
+        run: |
+          # replace 'TAG' with actual tag
+          sed "s@TAG@${{ github.ref_name }}@g" release-notes-template.md > release-notes.md
+
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/kafkatop-*
+        body_path: release-notes.md
+
+
+

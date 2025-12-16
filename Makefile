@@ -20,6 +20,7 @@ GOARCH ?= $(shell go env GOARCH)
 # Go source files
 GO_SOURCES := $(shell find go -name '*.go' -type f)
 GO_MOD := go/go.mod go/go.sum
+GO_DIST = dist
 
 # Colors for echos (check if tput is available and TERM is set)
 ccend = $(shell if [ -n "$$TERM" ] && command -v tput >/dev/null 2>&1; then tput sgr0; fi)
@@ -87,9 +88,10 @@ $(GOBIN): $(GO_SOURCES) $(GO_MOD)
 
 $(CROSS_TARGETS): $(GO_SOURCES) $(GO_MOD)
 	@echo "$(ccso)--> Building cross-compile version for $(GOOS)/$(GOARCH) ($(ccend})$@)"
+	mkdir -p $(GO_DIST)
 	# GOOS/GOARCH are automatically set via the Target-Specific Variables above
-	cd go && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags="-s -w" -o ../$@ .
-	@echo "$(ccgreen)Built: $@$(ccend)"
+	cd go && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags="-s -w" -o ../$(GO_DIST)/$@ .
+	@echo "$(ccgreen)Built: $(GO_DIST)/$@$(ccend)"
 
 go-deps: ## Install Go dependencies
 	@echo "$(ccso)--> Installing Go dependencies $(ccend)"
@@ -97,7 +99,7 @@ go-deps: ## Install Go dependencies
 
 go-clean: ## Clean Go build artifacts
 	@echo "$(ccso)--> Cleaning Go build artifacts $(ccend)"
-	rm -f $(GOBIN) kafkatop-* *.exe
+	rm -f $(GOBIN) kafkatop-* *.exe $(GO_DIST)/*
 	cd go && $(GO) clean
 
 go-test: ## Run Go tests

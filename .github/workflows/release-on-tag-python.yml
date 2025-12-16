@@ -3,10 +3,11 @@
 name: Release Multiplatform Pex
 
 on:
-  push:
-    #branches: [ "master" ]
-    tags:
-    - '*'
+  workflow_dispatch: # manual trigger
+#  push:
+#    #branches: [ "master" ]
+#    tags:
+#    - '*'
 
 jobs:
   build:
