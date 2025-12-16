@@ -7,12 +7,11 @@
 ![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-main.png)
 *Anonymized topics and groups*
 
-## 🚀 Status: Go Version is Now Complete!
+## About version 2.x (GO rewrite)
 
-The Go rewrite is complete and will be the one receiving updates from now on.
+All version 1.x releases were python-based and distributed as a PEX binary. But as it relied on confluent's kafka which in turn depended on librdkafka it became hard to maintain it for older EOL OS (like CentOS7) where this library is no longer maintained upstream. 
 
-- **Go version** (✅ **recommended**): Static binary, instant startup, multi-arch, works on older systems (CentOS 7+), feature-complete
-- **Python version** (legacy): Original implementation, maintained for compatibility
+The new Go rewrite has feature-parity and several additional features; it will be the one receiving updates from now on. The binaries are static, and it utilizes franz-kafka under the hood which has no CGO dependencies, so it should be compatible with older libc systems.
 
 ## Features
 
@@ -31,68 +30,16 @@ The Go rewrite is complete and will be the one receiving updates from now on.
 
 # Installing
 
-## Go Version (Recommended)
+## Go Version
 
-Download the static binary from the [releases](https://github.com/sivann/kafkatop/releases) page. No dependencies required!
-
-```bash
-# Download and run (example for Linux AMD64)
-curl -L https://github.com/sivann/kafkatop/releases/download/vX.X.X/kafkatop-linux-amd64 -o kafkatop
-chmod +x kafkatop
-./kafkatop --kafka-broker localhost:9092
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/sivann/kafkatop.git
-cd kafkatop/go
-
-# Build for your current platform
-go build -o kafkatop .
-
-# Or use the Makefile from repository root
-cd ..
-make go-build
-
-# Run it
-./kafkatop --kafka-broker localhost:9092
-```
-
-**Requirements:** Go 1.21+ (only needed for building from source)
-
-## Python Version (Legacy)
-
-### Download the PEX binary
-Download the single-file [pex](https://github.com/pex-tool/pex)  executable from the [releases](https://github.com/sivann/kafkatop/releases)  page. It's compatible with X86 64-bit systems and requires Python 3.9–3.13 in your path.
-
-This is the easiest way to distribute, although startup time might be bit higher.
-
-### Using pip
-
-**Install with pip:**
-
-```
-pip install kafkatop
-```
-
-
-**Install inside a virtualenv (recommended practice):**
-
-```
-python3 -m venv virtual_env # this will create a 'virtual_env' directory
-. bin/virtual_env/activate  # 'activate' the virtualenv. Run 'deactivate' to deactivate.
-pip install --upgrade pip   # can produce errors otherwise
-pip install kafkatop        # install kafkatop
-kafkatop                    # run
-```
+Download the static binary from the [releases](https://github.com/sivann/kafkatop/releases) page. 
 
 ## Quick Start
 
 To get started, simply run `kafkatop` specifying the address of a Kafka broker if needed:
 
 ```
-kafkatop
+kafkatop     # specify broker:  -kafka-broker <broker-ip:broker-port>
 ```
 
 ### Common Use Cases
@@ -222,17 +169,23 @@ Press the same key again to reverse sort order.
 
 Rows are highlighted with a **dark red background** when they have issues (`hasIssues = true`). The highlighting is based on ETA (Time Left) calculations.
 
+**Rows are highlighted (red background) ONLY when:**
+1. ETA >= 2 minutes (120 seconds), OR
+2. No consumption AND (arrival rate > 1.0 OR lag > 1000)
+
+The ETA calculation method (`--eta-method`) determines how ETA is calculated, which affects which rows meet the highlighting threshold.
+
 ## Highlighting Cases
 
 ### 1. ETA-based Highlighting (Primary)
 
 Rows are highlighted based on the `RemainingSec` value from the ETA calculation:
 
-#### ✅ **NOT Highlighted** (OK):
+#### **NOT Highlighted** (OK):
 - **ETA < 1 minute** (`RemainingSec` 0-59): Green ETA color, no highlight
 - **ETA < 2 minutes** (`RemainingSec` 60-119): Yellow ETA color, no highlight
 
-#### ⚠️ **Highlighted** (Issues):
+#### **Highlighted** (Issues):
 - **ETA 2-10 minutes** (`RemainingSec` 120-599): Yellow ETA color **highlighted**
 - **ETA 10m-2h** (`RemainingSec` 600-7199): Magenta ETA color, **highlighted**
 - **ETA > 2h** (`RemainingSec` >= 7200): Red ETA color, **highlighted**
@@ -265,19 +218,12 @@ These affect cell colors but **DO NOT** trigger row highlighting:
 - **Dark green background**: Search matches (when searching with `/`)
 - **Dark blue background**: Selected row (when navigating search results)
 
-## Summary
 
-**Rows are highlighted (red background) ONLY when:**
-1. ETA >= 2 minutes (120 seconds), OR
-2. No consumption AND (arrival rate > 1.0 OR lag > 1000)
-
-The ETA calculation method (`--eta-method`) determines how ETA is calculated, which affects which rows meet the highlighting threshold.
-
-# 📈 Partition Load Uniformity Metrics
+# Partition Load Uniformity Metrics
 
 The following metrics are used by `kafkatop` to assess how uniformly events are distributed across a Kafka topic's partitions. Non-uniformity (skew) is a critical issue that leads to performance bottlenecks, overloaded consumers, and inefficient resource usage.
 
-All calculations are based on the measured **events per second** (throughput) for each partition.
+All calculations are based on the measured **events per second** (throughput) per partition.
 
 ---
 
@@ -306,7 +252,7 @@ The $C_v$ tells you "How large is the variation *relative* to the average load?"
 
 ## 2. Peak-to-Average Ratio (PAR) / Imbalance Ratio
 
-The Peak-to-Average Ratio is the most important metric for **capacity planning and immediate alerting**. It measures the load on the single busiest partition compared to the ideal average.
+The Peak-to-Average Ratio is the most important metric for **capacity planning and immediate alerting**. It measures the load on the single busiest partition compared to the ideal average. It only considers the 'worse case' partition, and does not provide overall topic health.
 
 ### Formula
 $$PAR = \frac{\text{Load}_{\max}}{\mu}$$
@@ -408,11 +354,10 @@ The JSON output includes:
 - Health metrics: PAR (Peak-to-Average Ratio) and Cv (Coefficient of Variation)
 - Topic configuration values (when available)
 
-# Contributing
 
-## Building
+# Building
 
-### Building the Go version (Recommended)
+## Building the Go version
 
 Requirements: Go 1.21+
 
@@ -433,46 +378,8 @@ GOOS=windows GOARCH=amd64 make go-build  # Windows
 
 The resulting binary is fully static with no dependencies and will work on older systems like CentOS 7.
 
-### Building the Python version
-
-Requires python >=3.9 in your path
-
-1. set the full path of PYTHON at the top of Makefile or add the PYTHON= parameter when calling make
-2. ```cd python && make```
-3. ```make pex```
-
-```
-cd python
-make pex
-```
-This will create a ```kafkatop``` pex executable which will include the python code and library dependencies all in one file. It will need the python3 in the path to run.
-
-#### Multiplatform building
-If you have multiple python versions on your environment, you can run ```make-pex-mp.sh``` to create a kafkatop binary which includes dependencies for all python versions.
-
-## Repository Structure
-
-```
-kafkatop/
-├── go/                    # Go implementation (primary)
-│   ├── internal/
-│   │   ├── kafka/        # Kafka admin client & lag calculation
-│   │   │   ├── admin.go  # Admin operations (consumer groups, offsets)
-│   │   │   └── lag.go    # Lag and rate calculation logic
-│   │   ├── types/        # Data structures
-│   │   │   └── types.go  # Params, KafkaData, LagStats, RateStats, etc.
-│   │   └── ui/           # Output modes
-│   │       ├── rich.go   # Interactive TUI (Bubble Tea)
-│   │       ├── text.go   # Plain text output
-│   │       ├── json.go   # JSON output modes
-│   │       └── summary.go # Summary output
-│   ├── main.go           # Entry point and CLI flag parsing
-│   └── go.mod            # Go module dependencies
-├── python/               # Python implementation (legacy)
-│   ├── kafkatop.py      # Main Python script
-│   └── ...
-└── Makefile             # Build both versions
-```
+## Building the Python version
+Check the README-PYTHON.md for documentation on the python implementation.
 
 # License
 This project is licensed under the terms of the MIT license.
