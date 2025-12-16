@@ -4,8 +4,10 @@
 
 `kafkatop` provides a simple, yet powerful, way to quickly view the health of your Kafka consumers and topics. It helps you identify bottlenecks and diagnose issues with consumer lag in real-time, directly from your terminal.
 
-![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-main.png)
-*Anonymized topics and groups*
+| ![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-main.png) |
+|:--:|
+| *Anonymized topics/groups. Highlighted row indicates consumption rate is much lower than arival rate of new events. **PAR** of 178 means the most busy partition is 178x more loaded than the mean, and **Cv** of 7 indicates an overall bad imbalance for all partitions.* | 
+
 
 ## About version 2.x
 
@@ -286,7 +288,7 @@ $C_v$ and PAR are complementary:
 
 | ![kafkatop screenshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-main.png) |
 |:--:|
-| *Anonymized topics/groups* Highlighted row indicates consumption rate is much lower than arival rate of new events | 
+| *Anonymized topics/groups. Highlighted row indicates consumption rate is much lower than arival rate of new events. PAR of 178 means the most busy partition is 178x more loaded than the mean, and Cv of 7 indicates an overall bad imbalance for all partitions.* | 
 
 | ![Scresnshot](https://raw.githubusercontent.com/sivann/kafkatop/refs/heads/master/images/kafkatop-topic-details.png) |
 |:--:|
