@@ -15,13 +15,16 @@ kafkatop static binaries, chose the one that matches your system.
 
 ---
 
-### 🛠 Installation
+### Installation
 1. **Download** the binary for your system.
 2. **Make it executable** (Linux/macOS only):
    ```
-   chmod +x kafkatop-<os>-<arch>
+   # Example for Linux AMD64
+   tar -xzvf kafkatop-linux-amd64.tar.gz  # extract
+   mv kafkatop-linux-amd64 kafkatop       # rename for convenience
+   chmod +x kafkatop                      # make it executable
    ```
 3. **Move to your path** (optional):
     ```
-    sudo mv kafkatop-<os>-<arch> /usr/local/bin/kafkatop
+   sudo mv kafkatop /usr/local/bin/       # put it in the path
     ```
