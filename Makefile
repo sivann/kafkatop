@@ -22,12 +22,19 @@ GO_SOURCES := $(shell find go -name '*.go' -type f)
 GO_MOD := go/go.mod go/go.sum
 GO_DIST = dist
 
-# Colors for echos (check if tput is available and TERM is set)
-ccend = $(shell if [ -n "$$TERM" ] && command -v tput >/dev/null 2>&1; then tput sgr0; fi)
-ccbold = $(shell if [ -n "$$TERM" ] && command -v tput >/dev/null 2>&1; then tput bold; fi)
-ccgreen = $(shell if [ -n "$$TERM" ] && command -v tput >/dev/null 2>&1; then tput setaf 2; fi)
-ccso = $(shell if [ -n "$$TERM" ] && command -v tput >/dev/null 2>&1; then tput smso; fi)
-
+# Some colors
+ifneq ($(shell [ -t 1 ] && echo true),true) # not for github actions, it generates errors
+    ccend :=
+    ccbold :=
+    ccgreen :=
+    ccso :=
+else
+    # Is a terminal - use tput
+    ccend := $(shell tput sgr0)
+    ccbold := $(shell tput bold)
+    ccgreen := $(shell tput setaf 2)
+    ccso := $(shell tput smso)
+endif
 
 # Define all explicit build outputs
 LINUX_TARGETS := kafkatop-linux-amd64 kafkatop-linux-arm64
