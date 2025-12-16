@@ -169,9 +169,7 @@ Press the same key again to reverse sort order.
 
 # Row Highlighting Rules
 
-Rows are highlighted with a **dark red background** when they have issues (`hasIssues = true`). The highlighting is based on ETA (Time Left) calculations.
-
-**Rows are highlighted (red background) ONLY when:**
+Rows are highlighted with a **red background** when they have issues. The highlighting is based on ETA (Time Left) calculations:
 1. ETA >= 2 minutes (120 seconds), OR
 2. No consumption AND (arrival rate > 1.0 OR lag > 1000)
 
@@ -181,26 +179,24 @@ The ETA calculation method (`--eta-method`) determines how ETA is calculated, wh
 
 ### 1. ETA-based Highlighting (Primary)
 
-Rows are highlighted based on the `RemainingSec` value from the ETA calculation:
-
 #### **NOT Highlighted** (OK):
-- **ETA < 1 minute** (`RemainingSec` 0-59): Green ETA color, no highlight
-- **ETA < 2 minutes** (`RemainingSec` 60-119): Yellow ETA color, no highlight
+- **ETA < 1 minute** (`ETA` 0-59 seconds): Green ETA color, no highlight
+- **ETA < 2 minutes** (`ETA` 60-119 seconds): Yellow ETA color, no highlight
 
 #### **Highlighted** (Issues):
-- **ETA 2-10 minutes** (`RemainingSec` 120-599): Yellow ETA color **highlighted**
-- **ETA 10m-2h** (`RemainingSec` 600-7199): Magenta ETA color, **highlighted**
-- **ETA > 2h** (`RemainingSec` >= 7200): Red ETA color, **highlighted**
-- **No consumption** (`RemainingSec` == -1): Red ETA color, **highlighted** (only if `EventsArrivalRate > 1.0` OR `lag > 1000`)
+- **ETA 2-10 minutes** (`ETA` 120-599 seconds): Yellow ETA color **highlighted**
+- **ETA 10m-2h** (`ETA` 600-7199 seconds): Magenta ETA color, **highlighted**
+- **ETA > 2h** (`ETA` >= 7200 seconds): Red ETA color, **highlighted**
+- **No consumption** (`ETA` == -1): Red ETA color, **highlighted** (only if `New Events/sec > 1.0`  OR `lag > 1000`)
 
-### 2. ETA Calculation Methods
+### 2. ETA estimation methods
 
 The ETA calculation method affects which rows get highlighted:
 
 #### **Simple Method** (`--eta-method=simple`):
 - Uses only consumption rate: `ETA = lag / consumption_rate`
 - Ignores incoming rate
-- Original behavior
+- Original v1 behavior
 
 #### **Net Rate Method** (`--eta-method=net-rate`, default):
 - Accounts for both consumption and arrival rates: `ETA = lag / (consumption_rate - arrival_rate)`
@@ -219,7 +215,6 @@ These affect cell colors but **DO NOT** trigger row highlighting:
 
 - **Dark green background**: Search matches (when searching with `/`)
 - **Dark blue background**: Selected row (when navigating search results)
-
 
 # Partition Load Uniformity Metrics
 
