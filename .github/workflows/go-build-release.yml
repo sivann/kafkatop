@@ -6,6 +6,11 @@ on:
     tags:
       - '*'
 
+# A new push will stop processing the previous one
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build
