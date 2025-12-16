@@ -207,9 +207,9 @@ The ETA calculation method affects which rows get highlighted:
 
 These affect cell colors but **DO NOT** trigger row highlighting:
 
-- **Rate color (red)**: No consumption with lag (`lag > 0` AND `consumption_rate == 0`)
-- **Rate color (red)**: Arrival rate > 5x consumption rate
-- **Rate color (yellow)**: Arrival rate > 2x consumption rate
+- **Rate color red**: No consumption with lag (`lag > 0` AND `consumption_rate == 0`)
+- **Rate color red**: Arrival rate > 5x consumption rate
+- **Rate color yellow**: Arrival rate > 2x consumption rate
 
 ### 4. Other Highlighting (Non-issue)
 
@@ -241,7 +241,7 @@ The $C_v$ tells you "How large is the variation *relative* to the average load?"
 | **$0.00 - 0.20$** | **Excellent / Healthy** | Near-perfect uniformity. The partitioning key works well. |
 | **$0.20 - 0.50$** | **Acceptable / Warning** | Manageable non-uniformity. Variation is noticeable but usually operational. |
 | **$0.50 - 1.00$** | **High Skew / Warning** | The spread is significant. Inefficient resource usage and potential consumer issues. |
-| **$> 1.00$** | **Critical Skew / Failure** | Severe imbalance. The typical partition load is more than 100% away from the average. **Urgent fix required.** |
+| **$> 1.00$** | **Critical Skew / Failure** | Severe imbalance. The typical partition load is more than 100% away from the average. **Consider a different partitioning key.** |
 
 
 ## 2. Peak-to-Average Ratio (PAR) / Imbalance Ratio
